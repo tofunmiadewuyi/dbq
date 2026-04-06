@@ -1,0 +1,16 @@
+# binary
+dbq
+
+# env
+.env
+*.env
+
+# macos
+.DS_Store
+
+# ide
+.idea/
+.vscode/
+
+# logs
+*.log
