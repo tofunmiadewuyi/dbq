@@ -44,7 +44,7 @@ mv dbq /usr/local/bin/
 ### Interactive mode
 
 ```bash
-dbq
+dbq start
 ```
 
 Launches the interactive menu. From here you can create jobs, run them manually, test connections, and schedule/unschedule them.
@@ -56,6 +56,22 @@ dbq run <job-id>
 ```
 
 Runs the backup for the given job ID non-interactively. This is what the generated systemd service calls.
+
+### Check version
+
+```bash
+dbq version
+```
+
+Shows your the current version running.
+
+### Upgrade
+
+```bash
+dbq upgrade
+```
+
+Helps you install the latest version of dbq.
 
 ## Job configuration
 
