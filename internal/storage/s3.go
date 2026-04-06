@@ -95,6 +95,21 @@ func (s *S3Client) DownloadBackup(ctx context.Context, s3Key string) ([]byte, er
 	return data, nil
 }
 
+// PresignPutURL returns a presigned PUT URL for direct server-to-S3 uploads.
+func (s *S3Client) PresignPutURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(s.client)
+	req, err := presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiry
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned upload URL: %w", err)
+	}
+	return req.URL, nil
+}
+
 // GetPresignedURL generates a presigned URL for downloading a file
 // Useful for allowing direct downloads from S3 without proxying through your API
 func (s *S3Client) GetPresignedURL(ctx context.Context, s3Key string, expirationMinutes int) (string, error) {

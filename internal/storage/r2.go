@@ -54,6 +54,21 @@ func (r *R2Client) TestConnection(ctx context.Context) error {
 	return nil
 }
 
+// PresignPutURL returns a presigned PUT URL for direct server-to-R2 uploads.
+func (r *R2Client) PresignPutURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(r.client)
+	req, err := presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiry
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned upload URL: %w", err)
+	}
+	return req.URL, nil
+}
+
 func (r *R2Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, contentType string, reader io.Reader) (string, error) {
 	key := fmt.Sprintf("backups/%s/%s/%d", backupName, filepath.Base(dbName), timestamp.Unix())
 

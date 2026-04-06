@@ -6,6 +6,49 @@ import (
 	"unicode/utf8"
 )
 
+// CronToOnCalendar converts a 5-field cron expression to a systemd OnCalendar value.
+// supports common cases: daily, weekly, monthly, yearly.
+// complex expressions (ranges, steps, lists) are not supported.
+func CronToOnCalendar(cron string) (string, error) {
+	fields := strings.Fields(cron)
+	if len(fields) != 5 {
+		return "", fmt.Errorf("invalid cron expression: %q", cron)
+	}
+
+	minute, hour, dom, month, dow := fields[0], fields[1], fields[2], fields[3], fields[4]
+
+	for _, f := range fields {
+		if strings.ContainsAny(f, ",-/") {
+			return "", fmt.Errorf("cron expression %q contains ranges, steps, or lists — convert manually to OnCalendar", cron)
+		}
+	}
+
+	dowMap := map[string]string{
+		"0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed",
+		"4": "Thu", "5": "Fri", "6": "Sat",
+	}
+
+	t := fmt.Sprintf("%s:%s:00", cronPad(hour), cronPad(minute))
+	date := fmt.Sprintf("*-%s-%s", cronPad(month), cronPad(dom))
+
+	if dow != "*" {
+		day, ok := dowMap[dow]
+		if !ok {
+			return "", fmt.Errorf("unrecognised day-of-week value: %q", dow)
+		}
+		return fmt.Sprintf("%s %s %s", day, date, t), nil
+	}
+
+	return fmt.Sprintf("%s %s", date, t), nil
+}
+
+func cronPad(s string) string {
+	if s == "*" || len(s) >= 2 {
+		return s
+	}
+	return "0" + s
+}
+
 func PrintDividerLine() {
 	fmt.Println("---------------------------------------------")
 }

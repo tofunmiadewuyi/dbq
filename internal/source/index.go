@@ -11,6 +11,9 @@ import (
 
 type DBDriver interface {
 	Dump(job *job.Job, r reader.FileReader) (string, error)
+	// DumpRemote runs pg_dump on the remote host writing output to remotePath on that host.
+	// used when useserver=true to avoid streaming the dump over home internet.
+	DumpRemote(job *job.Job, r reader.FileReader, remotePath string) error
 	Test(job *job.Job, r reader.FileReader) error
 }
 

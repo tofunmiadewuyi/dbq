@@ -12,6 +12,7 @@ import (
 	"github.com/tofunmiadewuyi/dbq/internal/reader"
 )
 
+
 type Postgres struct{}
 
 func (pg *Postgres) Dump(job *job.Job, r reader.FileReader) (string, error) {
@@ -46,6 +47,31 @@ func (pg *Postgres) Dump(job *job.Job, r reader.FileReader) (string, error) {
 	}
 
 	return outPath, nil
+}
+
+// DumpRemote runs pg_dump on the remote host and writes the output to remotePath on that host.
+// this avoids streaming the dump over the home internet connection.
+func (pg *Postgres) DumpRemote(j *job.Job, r reader.FileReader, remotePath string) error {
+	if err := checkPgDump(r); err != nil {
+		return err
+	}
+
+	cmd := fmt.Sprintf(
+		"mkdir -p '%s' && PGPASSWORD='%s' pg_dump -Fc -f '%s' -h %s -p %s -U %s -d %s",
+		filepath.Dir(remotePath),
+		j.Database.Password,
+		remotePath,
+		j.Database.Host,
+		j.Database.Port,
+		j.Database.Username,
+		j.Database.Name,
+	)
+
+	if _, err := r.Exec(cmd); err != nil {
+		r.Exec(fmt.Sprintf("rm -f '%s'", remotePath)) //nolint: errcheck
+		return fmt.Errorf("pg_dump: %w", err)
+	}
+	return nil
 }
 
 func (pg *Postgres) Test(job *job.Job, r reader.FileReader) error {

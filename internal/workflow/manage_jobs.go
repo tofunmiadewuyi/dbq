@@ -8,6 +8,7 @@ import (
 	"github.com/tofunmiadewuyi/dbq/internal/action"
 	"github.com/tofunmiadewuyi/dbq/internal/input"
 	"github.com/tofunmiadewuyi/dbq/internal/job"
+	"github.com/tofunmiadewuyi/dbq/internal/systemd"
 )
 
 // PrintAvailableJobs renders the job list and returns the selected job.
@@ -48,7 +49,11 @@ func PrintJobOptions(j *job.Job) string {
 	center := box.BoxCenter
 	row := box.CreateRow
 
-	options := []string{"Run", "Test", "Edit", "Delete"}
+	scheduleLabel := "Schedule"
+	if systemd.IsInstalled(j) {
+		scheduleLabel = "Unschedule"
+	}
+	options := []string{"Run", "Test", scheduleLabel, "Edit", "Delete"}
 
 	fmt.Printf("\n┌%s┐\n", border)
 	fmt.Printf("│%s│\n", center(j.Name))
@@ -141,6 +146,20 @@ jobList:
 							fmt.Println("error:", err)
 						}
 					}
+				}
+
+			case "Schedule":
+				if err := systemd.Install(j); err != nil {
+					fmt.Println("error:", err)
+				} else {
+					fmt.Printf("✅ Timer scheduled — job will run on: %s\n", j.Frequency)
+				}
+
+			case "Unschedule":
+				if err := systemd.Uninstall(j); err != nil {
+					fmt.Println("error:", err)
+				} else {
+					fmt.Printf("✅ Timer removed for %s\n", j.Name)
 				}
 
 			case "< Back":

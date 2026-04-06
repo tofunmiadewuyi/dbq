@@ -13,11 +13,12 @@ import (
 )
 
 type SSHConn struct {
-	Required bool   `toml:"required"`
-	Port     int    `toml:"sshport"`
-	Host     string `toml:"sshhost"`
-	Key      string `toml:"sshkey"`
-	User     string `toml:"sshuser"`
+	Required  bool   `toml:"required"`
+	Port      int    `toml:"sshport"`
+	Host      string `toml:"sshhost"`
+	Key       string `toml:"sshkey"`
+	User      string `toml:"sshuser"`
+	UseServer bool   `toml:"useserver"`
 }
 
 type DB struct {

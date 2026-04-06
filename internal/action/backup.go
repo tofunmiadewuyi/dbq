@@ -46,6 +46,11 @@ func runBackup(j *job.Job) error {
 	}
 	defer fileReader.Close()
 
+	// server-side path: dump on the remote host and upload directly to cloud
+	if j.Database.SSH.Required && j.Database.SSH.UseServer && j.StorageType == config.StorageCloud {
+		return runServerSideBackup(j, driver, fileReader)
+	}
+
 	dumpPath, err := driver.Dump(j, fileReader)
 	if err != nil {
 		return fmt.Errorf("failed to dump database: %w", err)
@@ -67,6 +72,40 @@ func runBackup(j *job.Job) error {
 	default:
 		return fmt.Errorf("unknown storage type: %s", j.StorageType)
 	}
+}
+
+// runServerSideBackup dumps the database to a temp file on the remote server,
+// then uploads it directly from the server to cloud storage using a presigned URL.
+// this avoids routing the dump through the home internet connection
+// and no credentials leave your machine.
+func runServerSideBackup(j *job.Job, driver source.DBDriver, r reader.FileReader) error {
+	timestamp := time.Now()
+	fileName := fmt.Sprintf("%s_%s_%s.dump", j.ID, j.Database.Name, timestamp.Format("20060102_150405"))
+	remotePath := fmt.Sprintf("/var/tmp/%s/%s", config.AppName, fileName)
+
+	if err := driver.DumpRemote(j, r, remotePath); err != nil {
+		return fmt.Errorf("server-side dump failed: %w", err)
+	}
+	defer func() { r.Exec(fmt.Sprintf("rm -f '%s'", remotePath)) }() //nolint: errcheck
+
+	client, err := storage.NewStorageClient(&j.Storage)
+	if err != nil {
+		return fmt.Errorf("failed to init storage client: %w", err)
+	}
+
+	key := storage.BackupKey(j.Name, j.Database.Name, timestamp)
+	url, err := client.PresignPutURL(context.Background(), key, 2*time.Hour)
+	if err != nil {
+		return fmt.Errorf("failed to generate upload URL: %w", err)
+	}
+
+	curlCmd := fmt.Sprintf("curl -s -f -X PUT -T '%s' '%s'", remotePath, url)
+	if _, err := r.Exec(curlCmd); err != nil {
+		return fmt.Errorf("server upload failed: %w", err)
+	}
+
+	fmt.Printf("✅ Backup uploaded → %s\n", key)
+	return nil
 }
 
 func uploadToCloud(j *job.Job, zipPath string) error {
