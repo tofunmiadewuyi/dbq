@@ -12,6 +12,7 @@ A CLI tool for scheduling and running PostgreSQL backups, with support for local
 - Schedule backups with systemd timers (no cron needed)
 - Per-job log files with timing for every run and test
 
+
 ## Requirements
 
 - Go 1.21+
@@ -20,12 +21,17 @@ A CLI tool for scheduling and running PostgreSQL backups, with support for local
 - For server-side uploads: `curl` on the remote host (installed by default on most Linux servers)
 
 ## Installation
+```bash
+curl -sL https://raw.githubusercontent.com/tofunmiadewuyi/dbq/main/install.sh | bash
+```
+or if you prefer to compile yourself;
 
 ```bash
 git clone https://github.com/tofunmiadewuyi/dbq
 cd dbq
 go build -o dbq ./cmd
 ```
+
 
 Move the binary somewhere on your `$PATH`:
 
