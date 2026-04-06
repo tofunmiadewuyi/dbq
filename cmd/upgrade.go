@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+
 )
 
 var version = "dev"
@@ -32,6 +33,18 @@ func upgrade() {
 
 	if rel.TagName == version {
 		fmt.Println("Already up to date.")
+		return
+	}
+
+
+	fmt.Printf("Update available: %s (current: %s)\n", rel.TagName, version)
+	fmt.Print("Continue? (y/n): ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	if input != "y" && input != "Y" {
+		fmt.Println("Aborted.")
 		return
 	}
 
@@ -61,7 +74,7 @@ func upgrade() {
 	gzr, _ := gzip.NewReader(f)
 	tr := tar.NewReader(gzr)
 
-	var binPath string = "/tmp/dbq_new"
+	var binPath = "/tmp/dbq_new"
 
 	for {
 		hdr, err := tr.Next()
