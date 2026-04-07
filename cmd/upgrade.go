@@ -21,20 +21,22 @@ func replaceBinary(src, dest string) error {
 	}
 	defer in.Close()
 
-	// Remove the existing binary before writing — on Linux you cannot open a
-	// running executable for writing ("text file busy"). Removing it unlinks the
-	// old inode while the running process keeps its file descriptor; the new
-	// file gets a fresh inode at the same path.
-	os.Remove(dest)
-
-	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	// Write to a temp file in the same directory as dest, then rename into
+	// place. rename() swaps directory entries atomically without opening the
+	// running executable for writing, avoiding "text file busy" on Linux.
+	tmp := dest + ".new"
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	out.Close()
 
-	_, err = io.Copy(out, in)
-	return err
+	return os.Rename(tmp, dest)
 }
 
 type Release struct {
