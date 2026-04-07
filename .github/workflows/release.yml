@@ -12,11 +12,6 @@ jobs:
   build-and-release:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64]
-
     steps:
       - uses: actions/checkout@v4
 
