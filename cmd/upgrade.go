@@ -8,11 +8,28 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
-
 )
 
 var version = "dev"
+
+func replaceBinary(src, dest string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}
 
 type Release struct {
 	TagName string `json:"tag_name"`
@@ -93,9 +110,17 @@ func upgrade() {
 
 	current, _ := os.Executable()
 
-	err = os.Rename(binPath, current)
+	err = replaceBinary(binPath, current)
 	if err != nil {
-		fmt.Println("Permission denied. Try running with sudo.")
+		fallback := filepath.Join(os.Getenv("HOME"), ".local/bin/dbq")
+		os.MkdirAll(filepath.Dir(fallback), 0755)
+		err2 := replaceBinary(binPath, fallback)
+		if err2 != nil {
+			fmt.Println("Upgrade failed:", err2)
+			return
+		}
+		fmt.Printf("Installed to %s (original location was not writable).\n", fallback)
+		fmt.Println("Ensure ~/.local/bin is in your $PATH.")
 		return
 	}
 
