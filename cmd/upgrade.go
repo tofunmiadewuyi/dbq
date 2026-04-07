@@ -52,13 +52,19 @@ func upgrade() {
 	defer resp.Body.Close()
 
 	var rel Release
-	json.NewDecoder(resp.Body).Decode(&rel)
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		fmt.Println("Upgrade failed: could not parse release info:", err)
+		return
+	}
+	if rel.TagName == "" {
+		fmt.Println("Upgrade failed: no release found (check https://github.com/" + repo + "/releases)")
+		return
+	}
 
 	if rel.TagName == version {
 		fmt.Println("Already up to date.")
 		return
 	}
-
 
 	fmt.Printf("Update available: %s (current: %s)\n", rel.TagName, version)
 	fmt.Print("Continue? (y/n): ")
@@ -81,35 +87,74 @@ func upgrade() {
 
 	tmpFile := "/tmp/dbq.tar.gz"
 
-	out, _ := os.Create(tmpFile)
+	out, err := os.Create(tmpFile)
+	if err != nil {
+		fmt.Println("Upgrade failed:", err)
+		return
+	}
 	defer out.Close()
 
 	resp, err = http.Get(url)
 	if err != nil {
-		panic(err)
+		fmt.Println("Upgrade failed: download error:", err)
+		return
 	}
 	defer resp.Body.Close()
 
-	io.Copy(out, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Upgrade failed: could not download release (HTTP %d)\n", resp.StatusCode)
+		return
+	}
+
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		fmt.Println("Upgrade failed: download error:", err)
+		return
+	}
+	out.Close()
 
 	// Extract
-	f, _ := os.Open(tmpFile)
-	gzr, _ := gzip.NewReader(f)
+	f, err := os.Open(tmpFile)
+	if err != nil {
+		fmt.Println("Upgrade failed:", err)
+		return
+	}
+	defer f.Close()
+
+	gzr, err := gzip.NewReader(f)
+	if err != nil {
+		fmt.Println("Upgrade failed: could not read archive:", err)
+		return
+	}
 	tr := tar.NewReader(gzr)
 
 	var binPath = "/tmp/dbq_new"
+	found := false
 
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
+		if err != nil {
+			fmt.Println("Upgrade failed: could not read archive:", err)
+			return
+		}
 		if hdr.Name == "dbq" {
-			outFile, _ := os.Create(binPath)
+			outFile, err := os.Create(binPath)
+			if err != nil {
+				fmt.Println("Upgrade failed:", err)
+				return
+			}
 			io.Copy(outFile, tr)
 			outFile.Close()
+			found = true
 			break
 		}
+	}
+
+	if !found {
+		fmt.Println("Upgrade failed: binary not found in archive")
+		return
 	}
 
 	os.Chmod(binPath, 0755)
