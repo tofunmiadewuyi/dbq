@@ -21,6 +21,12 @@ func replaceBinary(src, dest string) error {
 	}
 	defer in.Close()
 
+	// Remove the existing binary before writing — on Linux you cannot open a
+	// running executable for writing ("text file busy"). Removing it unlinks the
+	// old inode while the running process keeps its file descriptor; the new
+	// file gets a fresh inode at the same path.
+	os.Remove(dest)
+
 	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
