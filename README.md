@@ -167,6 +167,10 @@ Per-job logs are written to `~/.config/dbq/logs/<job-id>.log` (or `/etc/dbq/logs
 2026-04-05 02:01:44  backup     failed   1m02s
 ```
 
+## Inspiration
+
+Inspired by [r2-backup](https://github.com/dej10/r2-backup).
+
 ## Storage layout in S3 / R2
 
 ```
