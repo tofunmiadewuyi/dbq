@@ -152,7 +152,7 @@ jobList:
 				if err := systemd.Install(j); err != nil {
 					fmt.Println("error:", err)
 				} else {
-					fmt.Printf("✅ Timer scheduled — job will run on: %s\n", j.Frequency)
+					fmt.Printf("✅ Timer scheduled — job will run on: %s\n", utils.CronToReadable(j.Frequency))
 				}
 
 			case "Unschedule":
