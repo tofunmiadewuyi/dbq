@@ -50,11 +50,12 @@ jobs:
               # Package (tar.gz for unix, zip for windows)
               if [ "$GOOS" = "windows" ]; then
                 zip "$OUT.zip" "$OUT$EXT"
+                rm "$OUT$EXT"
               else
-                tar -czf "$OUT.tar.gz" -C dist "$(basename "$OUT")"
+                cp "$OUT" dist/dbq
+                tar -czf "$OUT.tar.gz" -C dist "dbq"
+                rm dist/dbq "$OUT"
               fi
-
-              rm "$OUT$EXT"
             done
           done
 
