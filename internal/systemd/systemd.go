@@ -71,6 +71,10 @@ func IsInstalled(j *job.Job) bool {
 
 // Install writes the service and timer unit files and enables the timer.
 func Install(j *job.Job) error {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return fmt.Errorf("scheduling requires systemd — not available on this system")
+	}
+
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("could not determine binary path: %w", err)
@@ -94,7 +98,13 @@ func Install(j *job.Job) error {
 		return fmt.Errorf("failed to write timer file: %w", err)
 	}
 
-	return systemctl(j, "enable", "--now")
+	if err := systemctl(j, "enable", "--now"); err != nil {
+		// roll back the written files so IsInstalled stays false
+		os.Remove(filepath.Join(dir, timerFileName(j)))
+		os.Remove(filepath.Join(dir, serviceFileName(j)))
+		return err
+	}
+	return nil
 }
 
 // Uninstall stops and removes the timer and service for a job.
