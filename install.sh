@@ -38,9 +38,32 @@ if [ ! -w "$INSTALL_DIR" ]; then
   INSTALL_DIR="$HOME/.local/bin"
   mkdir -p "$INSTALL_DIR"
   echo "Installing to $INSTALL_DIR (no sudo access)"
+
+  # Add to PATH in shell profile if not already present
+  SHELL_RC=""
+  if [ -f "$HOME/.zshrc" ]; then
+    SHELL_RC="$HOME/.zshrc"
+  elif [ -f "$HOME/.bashrc" ]; then
+    SHELL_RC="$HOME/.bashrc"
+  elif [ -f "$HOME/.profile" ]; then
+    SHELL_RC="$HOME/.profile"
+  fi
+
+  if [ -n "$SHELL_RC" ]; then
+    if ! grep -q 'HOME/.local/bin' "$SHELL_RC" 2>/dev/null; then
+      echo '' >> "$SHELL_RC"
+      echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+      echo "Added ~/.local/bin to PATH in $SHELL_RC"
+    fi
+  fi
 fi
 
 mv "$TMP_DIR/dbq" "$INSTALL_DIR/dbq"
 
 echo "Installed to $INSTALL_DIR/dbq"
+
+if [ "$INSTALL_DIR" = "$HOME/.local/bin" ]; then
+  echo "Reload your shell or run: export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
 echo "Run: dbq"
