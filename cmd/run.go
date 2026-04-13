@@ -9,6 +9,7 @@ import (
 	"github.com/tofunmiadewuyi/dbq/internal/action"
 	"github.com/tofunmiadewuyi/dbq/internal/config"
 	"github.com/tofunmiadewuyi/dbq/internal/job"
+	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
 func cleanStaleTempFiles() {
@@ -22,6 +23,36 @@ func cleanStaleTempFiles() {
 		}
 		return nil
 	})
+}
+
+func printLogs(id string) {
+	path := filepath.Join(utils.LogsDir(), id+".log")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "no logs found for job %q\n", id)
+		} else {
+			fmt.Fprintf(os.Stderr, "could not read logs: %v\n", err)
+		}
+		os.Exit(1)
+	}
+	fmt.Print(string(data))
+}
+
+func printConfig(id string) {
+	path := filepath.Join(utils.JobsDir(), id+".toml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "no config found for job %q\n", id)
+		} else {
+			fmt.Fprintf(os.Stderr, "could not read config: %v\n", err)
+		}
+		os.Exit(1)
+	}
+	fmt.Println(path)
+	fmt.Println()
+	fmt.Print(string(data))
 }
 
 // runJob is the non-interactive path called by the systemd service:
