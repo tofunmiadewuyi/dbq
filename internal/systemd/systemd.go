@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -104,7 +105,22 @@ func Install(j *job.Job) error {
 		os.Remove(filepath.Join(dir, serviceFileName(j)))
 		return err
 	}
+	enableLinger()
 	return nil
+}
+
+// enableLinger runs "loginctl enable-linger <username>" so that the user's
+// systemd instance (and therefore user timers) survives after logout.
+// Only called for non-root users; silently skips if loginctl is unavailable.
+func enableLinger() {
+	if os.Getuid() == 0 {
+		return // system-wide timers don't need linger
+	}
+	u, err := user.Current()
+	if err != nil {
+		return
+	}
+	exec.Command("loginctl", "enable-linger", u.Username).Run() //nolint:errcheck
 }
 
 // Uninstall stops and removes the timer and service for a job.

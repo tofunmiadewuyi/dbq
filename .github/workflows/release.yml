@@ -40,7 +40,7 @@ jobs:
               OUT="dist/$NAME"
 
               GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-X main.version=$VERSION" -o "$OUT$EXT" ./cmd
+                go build -ldflags="-s -w -X main.version=$VERSION" -o "$OUT$EXT" ./cmd
 
               # Package (tar.gz for unix, zip for windows)
               if [ "$GOOS" = "windows" ]; then
