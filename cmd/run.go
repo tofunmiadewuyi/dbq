@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tofunmiadewuyi/dbq/internal/action"
@@ -25,7 +26,7 @@ func cleanStaleTempFiles() {
 	})
 }
 
-func printLogs(id string) {
+func printLogs(id string, lines int) {
 	path := filepath.Join(utils.LogsDir(), id+".log")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -36,7 +37,7 @@ func printLogs(id string) {
 		}
 		os.Exit(1)
 	}
-	fmt.Print(string(data))
+	fmt.Print(utils.TailLines(string(data), lines))
 }
 
 func printConfig(id string) {
