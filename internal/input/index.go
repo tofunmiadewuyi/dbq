@@ -78,15 +78,30 @@ func ChooseAndExec(question string, options []Option) error {
 }
 
 func Choose(question string, options []string) string {
-	fmt.Println(question)
+	return ChooseWithDefault(question, options, "")
+}
+
+func ChooseWithDefault(question string, options []string, def string) string {
+	if def != "" {
+		fmt.Printf("%s [%s]:\n", question, def)
+	} else {
+		fmt.Println(question)
+	}
 	for i, opt := range options {
 		fmt.Printf("%d) %s\n", i+1, opt)
 	}
-	answer := Ask("select: ")
+	prompt := "select: "
+	if def != "" {
+		prompt = "select (Enter to keep): "
+	}
+	answer := Ask(prompt)
+	if answer == "" && def != "" {
+		return def
+	}
 	i, err := strconv.Atoi(answer)
 	if err != nil || i < 1 || i > len(options) {
 		fmt.Println("invalid selection")
-		return Choose(question, options)
+		return ChooseWithDefault(question, options, def)
 	}
 	return options[i-1]
 }

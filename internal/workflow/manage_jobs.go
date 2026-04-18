@@ -197,6 +197,11 @@ jobList:
 					continue jobList
 				}
 
+			case "Edit":
+				if err := job.EditJob(j); err != nil {
+					fmt.Println("error:", err)
+				}
+
 			case "< Back":
 				continue jobList
 

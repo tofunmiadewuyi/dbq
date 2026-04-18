@@ -50,10 +50,10 @@ func main() {
 	case "upgrade":
 		upgrade()
 
-	case "version":
+	case "version", "-v":
 		fmt.Println(version)
 
-	case "help":
+	case "help", "-h":
 		fmt.Println("Usage: dbq <command>")
 		fmt.Println()
 		fmt.Println("Commands:")

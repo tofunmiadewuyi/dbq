@@ -56,7 +56,7 @@ type Job struct {
 	Storage     CloudStorage       `toml:"storage"`
 }
 
-func (j *Job) PrintState() {
+func (j *Job) PrintState(title string) {
 	w := 68
 	box := utils.NewDisplayBox(w)
 	border := box.BoxBorder()
@@ -64,7 +64,7 @@ func (j *Job) PrintState() {
 	row := box.CreateRow
 
 	fmt.Printf("\n┌%s┐\n", border)
-	fmt.Printf("│%s│\n", center("NEW JOB"))
+	fmt.Printf("│%s│\n", center(title))
 	fmt.Printf("├%s┤\n", border)
 	row("Name:       ", j.Name)
 	row("ID:         ", j.ID)

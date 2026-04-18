@@ -2,6 +2,7 @@ package job
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/tofunmiadewuyi/dbq/utils"
 	"github.com/tofunmiadewuyi/dbq/internal/config"
@@ -9,16 +10,30 @@ import (
 )
 
 func StartNewJob() error {
+	return JobFlow(&Job{})
+}
 
-	var job Job
+func EditJob(j *Job) error {
+	return JobFlow(j)
+}
+
+func JobFlow(j *Job) error {
+	title := "NEW JOB"
+	if j.Name != "" {
+		title = "EDIT JOB"
+	}
 
 	// name + id
-	job.Name = input.AskValid("Job name: ", func(n string) error {
-		return input.ValidateField("name", n)
-	}, "")
-	job.ID = utils.StringToID(job.Name)
+	if j.Name == "" {
+		j.Name = input.AskValid("Job name: ", func(n string) error {
+			return input.ValidateField("name", n)
+		}, "")
+		j.ID = utils.StringToID(j.Name)
+	} else {
+		fmt.Printf("Name: %s\n", j.Name)
+	}
 
-	job.PrintState()
+	j.PrintState(title)
 
 	// frequency
 	fmt.Println("Backup frequency (cron format):")
@@ -26,111 +41,125 @@ func StartNewJob() error {
 	fmt.Println("  0 2 * * 1    every Monday at 2am")
 	fmt.Println("  0 2 1 * *    every month on the 1st at 2am")
 	fmt.Println("  0 2 1 1 *    every year on Jan 1st at 2am")
-	job.Frequency = input.AskValid("Enter cron: ", func(n string) error {
+	j.Frequency = input.AskValid("Enter cron: ", func(n string) error {
 		return input.ValidateCron("Backup frequency", n)
-	}, "0 0 1 * * ")
+	}, j.Frequency)
 
-	job.PrintState()
+	j.PrintState(title)
 
 	// database
-	var db = &job.Database
-	db.Type = config.DatabaseType(input.Choose("Database type PG/MYSQL: ", []string{string(config.Postgres), string(config.MySQL)}))
+	var db = &j.Database
+	db.Type = config.DatabaseType(input.ChooseWithDefault("Database type: ", []string{string(config.Postgres), string(config.MySQL)}, string(db.Type)))
 
 	db.Name = input.AskValid("Database name: ", func(n string) error {
 		return input.ValidateField("Database name", n)
-	}, "")
+	}, db.Name)
 
 	db.Host = input.AskValid("Database host: ", func(n string) error {
 		return input.ValidateField("Database host", n)
-	}, "localhost")
+	}, db.Host)
 
-	defPort, _ := utils.DefaultDBPort(db.Type)
+	if db.Port == "" {
+		db.Port, _ = utils.DefaultDBPort(db.Type)
+	}
 	db.Port = input.AskValid("Database port: ", func(n string) error {
 		return input.ValidateInt("Database port", n)
-	}, defPort)
+	}, db.Port)
 
 	db.Username = input.AskValid("Database username: ", func(n string) error {
 		return input.ValidateField("Database username", n)
-	}, "root")
+	}, db.Username)
 
 	db.Password = input.AskValid("Database password: ", func(n string) error {
 		return input.ValidateField("Database password", n)
-	}, "")
+	}, db.Password)
 
-	job.PrintState()
+	j.PrintState(title)
 
-	if sshRequired := input.Choose("Will we be connecting over SSH?:", []string{string(config.Yes), string(config.No)}); config.BinaryAnswer(sshRequired) == config.Yes {
-		var ssh = &job.Database.SSH
+	// ssh
+	currentSSH := string(config.No)
+	if db.SSH.Required {
+		currentSSH = string(config.Yes)
+	}
+	if config.BinaryAnswer(input.ChooseWithDefault("Connect over SSH?", []string{string(config.Yes), string(config.No)}, currentSSH)) == config.Yes {
+		var ssh = &j.Database.SSH
 
 		ssh.Host = input.AskValid("SSH Host: ", func(n string) error {
 			return input.ValidateField("SSH Host", n)
-		}, "")
+		}, ssh.Host)
 
+		sshPortDef := "22"
+		if ssh.Port != 0 {
+			sshPortDef = strconv.Itoa(ssh.Port)
+		}
 		ssh.Port = input.AskValidInt("SSH Port: ", func(n string) error {
 			return input.ValidateInt("SSH Port", n)
-		}, "22")
+		}, sshPortDef)
 
 		ssh.User = input.AskValid("SSH User: ", func(n string) error {
 			return input.ValidateField("SSH User", n)
-		}, "")
+		}, ssh.User)
 
 		rawKey := input.AskValid("Path to SSH Key: ", func(n string) error {
 			return input.ValidatePath("SSH Key", n)
-		}, "")
+		}, ssh.Key)
 		expandedKey, err := input.ExpandPath(rawKey)
 		if err != nil {
 			return err
 		}
 		ssh.Key = expandedKey
 		ssh.Required = true
-		job.PrintState()
+		j.PrintState(title)
+	} else {
+		j.Database.SSH = SSHConn{}
 	}
 
 	// storage
-	if storageType := input.Choose("How will you be storing backups: ", []string{string(config.StorageCloud), string(config.StorageDirectory)}); config.StorageType(storageType) == config.StorageDirectory {
-		job.StorageType = config.StorageDirectory
-		job.Storage = CloudStorage{}
-		job.Destination = input.AskValid("Path to directory: ", func(n string) error {
-			return input.ValidateField("Destination path", n)
-		}, "")
-	} else {
-		job.StorageType = config.StorageCloud
-		job.Destination = ""
+	storageType := input.ChooseWithDefault("How will you be storing backups: ", []string{string(config.StorageCloud), string(config.StorageDirectory)}, string(j.StorageType))
 
-		var cloud = &job.Storage
-		cloud.Provider = config.StorageProvider(input.Choose("Storage Provider: ", []string{string(config.S3), string(config.R2)}))
+	if config.StorageType(storageType) == config.StorageDirectory {
+		j.StorageType = config.StorageDirectory
+		j.Storage = CloudStorage{}
+		j.Destination = input.AskValid("Path to directory: ", func(n string) error {
+			return input.ValidateField("Destination path", n)
+		}, j.Destination)
+	} else {
+		j.StorageType = config.StorageCloud
+		j.Destination = ""
+
+		var cloud = &j.Storage
+		if cloud.Provider == "" {
+			cloud.Provider = config.S3
+		}
+		cloud.Provider = config.StorageProvider(input.ChooseWithDefault("Storage Provider: ", []string{string(config.S3), string(config.R2)}, string(cloud.Provider)))
 
 		if cloud.Provider == config.S3 {
 			cloud.Region = input.AskValid("AWS Region: ", func(n string) error {
 				return input.ValidateField("AWS Region", n)
-			}, "eu-west-1")
+			}, cloud.Region)
 		} else {
-			// r2
 			cloud.Endpoint = input.AskValid("R2 endpoint: ", func(n string) error {
 				return input.ValidateField("R2 endpoint", n)
-			}, "")
-
+			}, cloud.Endpoint)
 		}
 
 		cloud.AKID = input.AskValid("Access Key ID: ", func(n string) error {
 			return input.ValidateField("AKID", n)
-		}, "")
+		}, cloud.AKID)
 		cloud.SAK = input.AskValid("Secret Access Key: ", func(n string) error {
 			return input.ValidateField("SAK", n)
-		}, "")
+		}, cloud.SAK)
 		cloud.Bucket = input.AskValid("Bucket name: ", func(n string) error {
 			return input.ValidateField("Bucket name", n)
-		}, "")
-
+		}, cloud.Bucket)
 	}
 
-	// write to file
-	err := job.WriteJob()
+	err := j.WriteJob()
 	if err != nil {
-		fmt.Println("Could not save new job")
+		fmt.Println("Could not save job")
 	} else {
-		fmt.Printf("%s job saved!", job.Name)
+		fmt.Printf("✅ %s saved!\n", j.Name)
 	}
 
-	return nil
+	return err
 }
