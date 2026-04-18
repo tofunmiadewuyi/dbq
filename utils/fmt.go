@@ -77,9 +77,23 @@ func (b *DisplayBox) BoxCenter(s string) string {
 	return strings.Repeat(" ", pad) + s + strings.Repeat(" ", b.w-pad-n)
 }
 
-func (b *DisplayBox) CreateRow(label, value string) {
+// RowStr returns a formatted box row as a string without printing it.
+func (b *DisplayBox) RowStr(label, value string) string {
 	content := fmt.Sprintf("%s %s", label, value)
-	fmt.Printf("│ %-*s │\n", b.w-2, content)
+	return fmt.Sprintf("│ %-*s │\n", b.w-2, content)
+}
+
+func (b *DisplayBox) CreateRow(label, value string) {
+	fmt.Print(b.RowStr(label, value))
+}
+
+// DimPrevious rewrites the last-printed box and its "Select: N" prompt in dim ANSI style.
+// content is the exact string that was printed before the prompt; n is the integer the user selected.
+func DimPrevious(content string, n int) {
+	lines := strings.Count(content, "\n") + 1 // +1 for the "Select: N\n" line
+	fmt.Printf("\033[%dA", lines)              // cursor up
+	fmt.Print("\033[0J")                        // clear from cursor to end of screen
+	fmt.Printf("\033[2m%sSelect: %d\n\033[0m", content, n)
 }
 
 func StringToID(s string) string {

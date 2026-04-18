@@ -40,6 +40,13 @@ func main() {
 		}
 		printConfig(os.Args[2])
 
+	case "delete":
+		if len(os.Args) != 3 {
+			fmt.Println("Usage: dbq delete <job-id>")
+			return
+		}
+		deleteJob(os.Args[2])
+
 	case "upgrade":
 		upgrade()
 
@@ -54,6 +61,7 @@ func main() {
 		fmt.Println("  run <job-id>     Run a backup job by ID")
 		fmt.Println("  logs <job-id> [--lines <N>]    Print the log history for a job (last N entries)")
 		fmt.Println("  config <job-id>  Print the config file path and contents for a job")
+		fmt.Println("  delete <job-id>  Delete a job by ID")
 		fmt.Println("  upgrade          Upgrade dbq to the latest release")
 		fmt.Println("  version          Print the current version")
 		fmt.Println("  help             Show this help message")

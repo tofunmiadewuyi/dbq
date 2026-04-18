@@ -3,6 +3,9 @@ package workflow
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/tofunmiadewuyi/dbq/utils"
 	"github.com/tofunmiadewuyi/dbq/internal/action"
@@ -17,23 +20,25 @@ func PrintAvailableJobs(jobs []job.Job) *job.Job {
 	w := 68
 	box := utils.NewDisplayBox(w)
 	border := box.BoxBorder()
-	center := box.BoxCenter
-	row := box.CreateRow
 
-	fmt.Printf("\n┌%s┐\n", border)
-	fmt.Printf("│%s│\n", center("AVAILABLE JOB(s)"))
-	fmt.Printf("├%s┤\n", border)
-
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n┌%s┐\n", border)
+	fmt.Fprintf(&b, "│%s│\n", box.BoxCenter("AVAILABLE JOB(s)"))
+	fmt.Fprintf(&b, "├%s┤\n", border)
 	for i, j := range jobs {
-		row(fmt.Sprintf("%d)  ", i+1), j.Name)
+		b.WriteString(box.RowStr(fmt.Sprintf("%d)  ", i+1), j.Name))
 	}
+	b.WriteString(box.RowStr("0)  ", "< back"))
+	fmt.Fprintf(&b, "└%s┘\n\n", border)
 
-	row("0)  ", "< back")
-	fmt.Printf("└%s┘\n\n", border)
+	content := b.String()
+	fmt.Print(content)
 
 	selection := input.AskValidInt("Select: ", func(n string) error {
 		return input.ValidateInt("A selection", n)
 	}, "")
+
+	utils.DimPrevious(content, selection)
 
 	if selection == 0 {
 		return nil
@@ -46,29 +51,31 @@ func PrintJobOptions(j *job.Job) string {
 	w := 68
 	box := utils.NewDisplayBox(w)
 	border := box.BoxBorder()
-	center := box.BoxCenter
-	row := box.CreateRow
 
 	scheduleLabel := "Schedule"
 	if systemd.IsInstalled(j) {
 		scheduleLabel = "Unschedule"
 	}
-	options := []string{"Run", "Test", scheduleLabel, "Edit", "Delete"}
+	options := []string{"Run", "Test", scheduleLabel, "Logs", "Edit", "Delete"}
 
-	fmt.Printf("\n┌%s┐\n", border)
-	fmt.Printf("│%s│\n", center(j.Name))
-	fmt.Printf("├%s┤\n", border)
-
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n┌%s┐\n", border)
+	fmt.Fprintf(&b, "│%s│\n", box.BoxCenter(j.Name))
+	fmt.Fprintf(&b, "├%s┤\n", border)
 	for i, opt := range options {
-		row(fmt.Sprintf("%d)  ", i+1), opt)
+		b.WriteString(box.RowStr(fmt.Sprintf("%d)  ", i+1), opt))
 	}
+	b.WriteString(box.RowStr("0)  ", "< back"))
+	fmt.Fprintf(&b, "└%s┘\n\n", border)
 
-	row("0)  ", "< back")
-	fmt.Printf("└%s┘\n\n", border)
+	content := b.String()
+	fmt.Print(content)
 
 	selection := input.AskValidInt("Select: ", func(n string) error {
 		return input.ValidateInt("A selection", n)
 	}, "")
+
+	utils.DimPrevious(content, selection)
 
 	if selection == 0 {
 		return "< Back"
@@ -81,25 +88,27 @@ func PrintTestOptions(j *job.Job) string {
 	w := 68
 	box := utils.NewDisplayBox(w)
 	border := box.BoxBorder()
-	center := box.BoxCenter
-	row := box.CreateRow
 
 	options := []string{"Test Dump", "Test Storage"}
 
-	fmt.Printf("\n┌%s┐\n", border)
-	fmt.Printf("│%s│\n", center("TEST — "+j.Name))
-	fmt.Printf("├%s┤\n", border)
-
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n┌%s┐\n", border)
+	fmt.Fprintf(&b, "│%s│\n", box.BoxCenter("TEST — "+j.Name))
+	fmt.Fprintf(&b, "├%s┤\n", border)
 	for i, opt := range options {
-		row(fmt.Sprintf("%d)  ", i+1), opt)
+		b.WriteString(box.RowStr(fmt.Sprintf("%d)  ", i+1), opt))
 	}
+	b.WriteString(box.RowStr("0)  ", "< back"))
+	fmt.Fprintf(&b, "└%s┘\n\n", border)
 
-	row("0)  ", "< back")
-	fmt.Printf("└%s┘\n\n", border)
+	content := b.String()
+	fmt.Print(content)
 
 	selection := input.AskValidInt("Select: ", func(n string) error {
 		return input.ValidateInt("A selection", n)
 	}, "")
+
+	utils.DimPrevious(content, selection)
 
 	if selection == 0 {
 		return "< Back"
@@ -155,11 +164,37 @@ jobList:
 					fmt.Printf("✅ Timer scheduled — job will run on: %s\n", utils.CronToReadable(j.Frequency))
 				}
 
+			case "Logs":
+				data, err := utils.ReadLogs(j.ID)
+				if err != nil {
+					if os.IsNotExist(err) {
+						fmt.Printf("no logs found for %s\n", j.Name)
+					} else {
+						fmt.Println("error reading logs:", err)
+					}
+				} else {
+					fmt.Printf("\n— logs for %s —\n\n%s\n", j.Name, data)
+				}
+
 			case "Unschedule":
 				if err := systemd.Uninstall(j); err != nil {
 					fmt.Println("error:", err)
 				} else {
 					fmt.Printf("✅ Timer removed for %s\n", j.Name)
+				}
+
+			case "Delete":
+				path := filepath.Join(utils.JobsDir(), j.ID+".toml")
+				if err := os.Remove(path); err != nil {
+					fmt.Println("error deleting job:", err)
+				} else {
+					fmt.Printf("✅ Job %q deleted\n", j.Name)
+					updated, err := job.GetJobs()
+					if err != nil {
+						return err
+					}
+					jobs = updated
+					continue jobList
 				}
 
 			case "< Back":

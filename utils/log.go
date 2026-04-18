@@ -30,6 +30,16 @@ func TailLines(s string, n int) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// ReadLogs returns the full log content for a job.
+func ReadLogs(id string) (string, error) {
+	path := filepath.Join(LogsDir(), id+".log")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // AppendLog writes a single run entry to the job's log file.
 func AppendLog(jobID, operation string, d time.Duration, err error) {
 	dir := LogsDir()

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/tofunmiadewuyi/dbq/internal/input"
 	"github.com/tofunmiadewuyi/dbq/internal/job"
@@ -40,23 +41,25 @@ func startCLI() {
 		w := 68
 		box := utils.NewDisplayBox(w)
 		border := box.BoxBorder()
-		center := box.BoxCenter
-		row := box.CreateRow
 
-		fmt.Printf("\n┌%s┐\n", border)
-		fmt.Printf("│%s│\n", center("WELCOME TO DBQ BY 7A"))
-		fmt.Printf("├%s┤\n", border)
-
-		row(" ", "What would you like to do?")
+		var b strings.Builder
+		fmt.Fprintf(&b, "\n┌%s┐\n", border)
+		fmt.Fprintf(&b, "│%s│\n", box.BoxCenter("WELCOME TO DBQ BY 7A"))
+		fmt.Fprintf(&b, "├%s┤\n", border)
+		b.WriteString(box.RowStr(" ", "What would you like to do?"))
 		for i, opt := range menuOptions {
-			row(fmt.Sprintf("%d)  ", i+1), opt.Label)
+			b.WriteString(box.RowStr(fmt.Sprintf("%d)  ", i+1), opt.Label))
 		}
+		fmt.Fprintf(&b, "└%s┘\n\n", border)
 
-		fmt.Printf("└%s┘\n\n", border)
+		content := b.String()
+		fmt.Print(content)
 
 		selection := input.AskValidInt("Select: ", func(n string) error {
 			return input.ValidateInt("A selection", n)
 		}, "")
+
+		utils.DimPrevious(content, selection)
 
 		if err := menuOptions[selection-1].Action(); err != nil {
 			fmt.Println("error:", err)

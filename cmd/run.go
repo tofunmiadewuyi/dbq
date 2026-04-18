@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/tofunmiadewuyi/dbq/internal/action"
@@ -38,6 +37,19 @@ func printLogs(id string, lines int) {
 		os.Exit(1)
 	}
 	fmt.Print(utils.TailLines(string(data), lines))
+}
+
+func deleteJob(id string) {
+	path := filepath.Join(utils.JobsDir(), id+".toml")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "no job found with id %q\n", id)
+		} else {
+			fmt.Fprintf(os.Stderr, "could not delete job: %v\n", err)
+		}
+		os.Exit(1)
+	}
+	fmt.Printf("job %q deleted\n", id)
 }
 
 func printConfig(id string) {

@@ -1,6 +1,9 @@
 build:
 	go build -ldflags="-s -w -X main.version=dev" -o dbq ./cmd
 
+start: build
+	./dbq start
+
 release:
 	@latest=$$(git tag --sort=-version:refname | head -1); \
 	if [ -z "$$latest" ]; then next="v0.1.0"; \
