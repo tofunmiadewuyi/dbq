@@ -1,37 +1,35 @@
 # dbq
 
-A CLI tool for scheduling and running PostgreSQL backups, with support for local directory storage or cloud storage (AWS S3 / Cloudflare R2).
+A CLI tool for scheduling and running PostgreSQL and MySQL backups, with support for local directory storage or cloud storage (AWS S3 / Cloudflare R2).
 
 ## Features
 
 - Interactive terminal UI for creating and managing backup jobs
+- **PostgreSQL** and **MySQL** support
 - Backup to a local directory or upload directly to S3 / R2
 - SSH support — dump a remote database over an SSH connection
 - Server-side mode — dump and upload entirely on the server, bypassing your home internet
-- Automatic compression with pg_dump's custom format (`-Fc`)
-- Schedule backups with systemd timers (no cron needed)
+- Schedule backups with systemd timers (Linux) or launchd (macOS)
 - Per-job log files with timing for every run and test
 
 
 ## Requirements
 
-- Go 1.21+
-- `pg_dump` installed wherever the database lives (locally or on the SSH host)
-- For scheduled backups: systemd (Linux)
+- `pg_dump` / `mysqldump` installed wherever the database lives (locally or on the SSH host)
+- For scheduled backups: systemd (Linux) or launchd (macOS)
 - For server-side uploads: `curl` on the remote host (installed by default on most Linux servers)
 
 ## Installation
 ```bash
 curl -sL https://raw.githubusercontent.com/tofunmiadewuyi/dbq/main/install.sh | bash
 ```
-or if you prefer to compile yourself;
+or if you prefer to compile yourself:
 
 ```bash
 git clone https://github.com/tofunmiadewuyi/dbq
 cd dbq
 go build -o dbq ./cmd
 ```
-
 
 Move the binary somewhere on your `$PATH`:
 
@@ -41,43 +39,38 @@ mv dbq /usr/local/bin/
 
 ## Usage
 
+```
+dbq start                          Open the interactive job manager
+dbq run <job-id>                   Run a backup job by ID
+dbq logs <job-id> [--lines <N>]   Print log history for a job
+dbq config <job-id>                Print the config file for a job
+dbq delete <job-id>                Delete a job by ID
+dbq upgrade                        Upgrade dbq to the latest release
+dbq version / -v                   Print the current version
+dbq help / -h                      Show usage
+```
+
 ### Interactive mode
 
 ```bash
 dbq start
 ```
 
-Launches the interactive menu. From here you can create jobs, run them manually, test connections, and schedule/unschedule them.
+Launches the interactive menu. From here you can create jobs, run them manually, view logs, test connections, edit, schedule/unschedule, and delete them.
 
-### Run a job directly (used by systemd)
+### Run a job directly (used by systemd / launchd)
 
 ```bash
 dbq run <job-id>
 ```
 
-Runs the backup for the given job ID non-interactively. This is what the generated systemd service calls.
-
-### Check version
-
-```bash
-dbq version
-```
-
-Shows your the current version running.
-
-### Upgrade
-
-```bash
-dbq upgrade
-```
-
-Helps you install the latest version of dbq.
+Runs the backup for the given job ID non-interactively. This is what the generated systemd service or launchd plist calls.
 
 ## Job configuration
 
-Jobs are stored as TOML files in `~/.config/dbq/jobs/` (or `/etc/dbq/jobs/` when running as root). You can create them through the interactive UI or edit them directly.
+Jobs are stored as TOML files in `~/.config/dbq/jobs/` (or `/etc/dbq/jobs/` when running as root). You can create and edit them through the interactive UI.
 
-### Example — local database, upload to S3
+### Example — local PostgreSQL database, upload to S3
 
 ```toml
 name = "my-app"
@@ -99,6 +92,24 @@ frequency = "0 2 * * *"
   region = "eu-west-1"
   access_key = "AKIAIOSFODNN7EXAMPLE"
   secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+```
+
+### Example — local MySQL database, save to directory
+
+```toml
+name = "mysql-app"
+id = "mysql-app"
+storage_type = "directory"
+destination = "/mnt/backups"
+frequency = "0 3 * * *"
+
+[database]
+  name = "mydb"
+  type = "mysql"
+  host = "localhost"
+  port = "3306"
+  username = "root"
+  password = "secret"
 ```
 
 ### Example — remote database over SSH, upload to R2
@@ -137,23 +148,27 @@ frequency = "0 3 * * *"
 
 When `useserver = true`, dbq does not stream the dump over your SSH connection. Instead:
 
-1. `pg_dump` runs on the server and writes to `/var/tmp/dbq/` on that host
+1. `pg_dump` / `mysqldump` runs on the server and writes to `/var/tmp/dbq/` on that host
 2. A presigned PUT URL is generated on your machine (no credentials leave it)
 3. The server uploads the file directly to S3/R2 via `curl`
 4. The temp file is deleted from the server
 
-This is useful when your SSH connection is slow (e.g. a small EC2 instance on a throttled tier) but the server has fast outbound internet to AWS/Cloudflare.
+This is useful when your SSH connection is slow but the server has fast outbound internet to AWS/Cloudflare.
 
-Requirements: `curl` on the server, outbound HTTPS (port 443) allowed — both are true by default on most cloud hosts.
+Requirements: `curl` on the server, outbound HTTPS (port 443) allowed.
 
 ## Scheduling
 
-From the job management menu, select **Schedule** to install a systemd timer for the job. This creates:
+From the job management menu, select **Schedule** to install a timer for the job.
 
+**Linux (systemd)** — creates:
 - `~/.config/systemd/user/dbq-<id>.service`
 - `~/.config/systemd/user/dbq-<id>.timer`
 
-The timer uses `Persistent=true`, meaning a missed run (e.g. the machine was off) will fire as soon as it comes back online.
+The timer uses `Persistent=true`, so a missed run fires as soon as the machine comes back online.
+
+**macOS (launchd)** — creates:
+- `~/Library/LaunchAgents/com.dbq.<id>.plist`
 
 Select **Unschedule** to disable and remove the timer.
 
@@ -165,6 +180,12 @@ Per-job logs are written to `~/.config/dbq/logs/<job-id>.log` (or `/etc/dbq/logs
 2026-04-06 02:01:12  backup     ok       4m12s
 2026-04-06 02:00:01  test dump  ok       3s
 2026-04-05 02:01:44  backup     failed   1m02s
+```
+
+View logs from the CLI:
+```bash
+dbq logs <job-id>
+dbq logs <job-id> --lines 10   # last 10 entries
 ```
 
 ## Inspiration
