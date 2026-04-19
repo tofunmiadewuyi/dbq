@@ -23,7 +23,7 @@ func NewDBDriver(db *job.DB) (DBDriver, error) {
 	case config.Postgres:
 		return &Postgres{}, nil
 	case config.MySQL:
-		return nil, fmt.Errorf("unsupported database type: %v", db)
+		return &MySQL{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported database type: %v", db)
 	}
