@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tofunmiadewuyi/dbq/utils"
 	"github.com/tofunmiadewuyi/dbq/internal/action"
 	"github.com/tofunmiadewuyi/dbq/internal/input"
 	"github.com/tofunmiadewuyi/dbq/internal/job"
-	"github.com/tofunmiadewuyi/dbq/internal/systemd"
+	"github.com/tofunmiadewuyi/dbq/internal/scheduler"
+	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
 // PrintAvailableJobs renders the job list and returns the selected job.
@@ -53,7 +53,7 @@ func PrintJobOptions(j *job.Job) string {
 	border := box.BoxBorder()
 
 	scheduleLabel := "Schedule"
-	if systemd.IsInstalled(j) {
+	if scheduler.IsInstalled(j) {
 		scheduleLabel = "Unschedule"
 	}
 	options := []string{"Run", "Test", scheduleLabel, "Logs", "Edit", "Delete"}
@@ -157,13 +157,6 @@ jobList:
 					}
 				}
 
-			case "Schedule":
-				if err := systemd.Install(j); err != nil {
-					fmt.Println("error:", err)
-				} else {
-					fmt.Printf("✅ Timer scheduled — job will run on: %s\n", utils.CronToReadable(j.Frequency))
-				}
-
 			case "Logs":
 				data, err := utils.ReadLogs(j.ID)
 				if err != nil {
@@ -176,8 +169,15 @@ jobList:
 					fmt.Printf("\n— logs for %s —\n\n%s\n", j.Name, data)
 				}
 
+			case "Schedule":
+				if err := scheduler.Install(j); err != nil {
+					fmt.Println("error:", err)
+				} else {
+					fmt.Printf("✅ Timer scheduled — job will run on: %s\n", utils.CronToReadable(j.Frequency))
+				}
+
 			case "Unschedule":
-				if err := systemd.Uninstall(j); err != nil {
+				if err := scheduler.Uninstall(j); err != nil {
 					fmt.Println("error:", err)
 				} else {
 					fmt.Printf("✅ Timer removed for %s\n", j.Name)

@@ -2,9 +2,50 @@ package utils
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
+
+// CronToStartCalendarInterval converts a 5-field cron expression to a map of
+// launchd StartCalendarInterval keys (Minute, Hour, Day, Month, Weekday).
+// Only non-wildcard fields are included. Complex expressions (ranges, steps,
+// lists) are rejected, matching the behaviour of CronToOnCalendar.
+func CronToStartCalendarInterval(cron string) (map[string]int, error) {
+	fields := strings.Fields(cron)
+	if len(fields) != 5 {
+		return nil, fmt.Errorf("invalid cron expression: %q", cron)
+	}
+
+	minute, hour, dom, month, dow := fields[0], fields[1], fields[2], fields[3], fields[4]
+
+	for _, f := range fields {
+		if strings.ContainsAny(f, ",-/") {
+			return nil, fmt.Errorf("cron expression %q contains ranges, steps, or lists — convert manually", cron)
+		}
+	}
+
+	keys := map[string]string{
+		"Minute":  minute,
+		"Hour":    hour,
+		"Day":     dom,
+		"Month":   month,
+		"Weekday": dow,
+	}
+
+	result := make(map[string]int)
+	for key, val := range keys {
+		if val == "*" {
+			continue
+		}
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cron field %q: %w", val, err)
+		}
+		result[key] = n
+	}
+	return result, nil
+}
 
 // CronToOnCalendar converts a 5-field cron expression to a systemd OnCalendar value.
 // supports common cases: daily, weekly, monthly, yearly.
