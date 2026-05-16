@@ -15,7 +15,11 @@ func (m *keyringManager) Set(jobID, key, value string) error {
 }
 
 func (m *keyringManager) Get(jobID, key string) (string, error) {
-	return keyring.Get(service, jobID+"/"+key)
+	v, err := keyring.Get(service, jobID+"/"+key)
+	if err == keyring.ErrNotFound {
+		return "", ErrNotFound
+	}
+	return v, err
 }
 
 // Delete removes all known secrets for the given job.

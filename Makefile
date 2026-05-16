@@ -14,3 +14,11 @@ release:
 	fi; \
 	echo "Tagging $$next"; \
 	git tag $$next && git push origin $$next
+
+rerelease:
+	@latest=$$(git tag --sort=-version:refname | head -1); \
+	if [ -z "$$latest" ]; then echo "No tag to re-cut"; exit 1; fi; \
+	echo "Re-cutting $$latest"; \
+	git tag -d $$latest; \
+	git push origin :refs/tags/$$latest; \
+	git tag $$latest && git push origin $$latest
