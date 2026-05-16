@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 )
@@ -178,4 +179,34 @@ func upgrade() {
 	}
 
 	fmt.Println("Upgrade complete.")
+}
+
+func uninstall() {
+	path, err := os.Executable()
+	if err != nil {
+		fmt.Println("Uninstall failed: could not determine binary path:", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("This will remove %s. Continue? (y/n): ", path)
+	var input string
+	fmt.Scanln(&input)
+	if input != "y" && input != "Y" {
+		fmt.Println("Aborted.")
+		return
+	}
+
+	if err := os.Remove(path); err != nil {
+		fmt.Println("Permission denied. Retrying with sudo...")
+		cmd := exec.Command("sudo", "rm", path)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Println("Uninstall failed:", err)
+			os.Exit(1)
+		}
+	}
+
+	fmt.Println("dbq removed.")
 }

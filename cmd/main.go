@@ -60,6 +60,9 @@ func main() {
 	case "upgrade":
 		upgrade()
 
+	case "uninstall":
+		uninstall()
+
 	case "version", "-v":
 		fmt.Println(version)
 
@@ -73,6 +76,7 @@ func main() {
 		fmt.Println("  config <job-id>  Print the config file path and contents for a job")
 		fmt.Println("  delete <job-id>  Delete a job by ID")
 		fmt.Println("  upgrade          Upgrade dbq to the latest release")
+	fmt.Println("  uninstall        Remove the dbq binary")
 		fmt.Println("  version          Print the current version")
 		fmt.Println("  help             Show this help message")
 
