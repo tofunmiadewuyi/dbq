@@ -1,22 +1,20 @@
-package action
+package job
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/tofunmiadewuyi/dbq/utils"
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 	"github.com/tofunmiadewuyi/dbq/internal/reader"
 	"github.com/tofunmiadewuyi/dbq/internal/source"
 	"github.com/tofunmiadewuyi/dbq/internal/storage"
 )
 
-func TestDump(j *job.Job) error {
+func TestDump(j *Job) error {
 	start := time.Now()
 	err := runTestDump(j)
 	d := time.Since(start).Round(time.Millisecond)
-	utils.AppendLog(j.ID, "test dump", d, err)
+	AppendLog(j.ID, "test dump", d, err)
 	if err != nil {
 		return err
 	}
@@ -24,26 +22,26 @@ func TestDump(j *job.Job) error {
 	return nil
 }
 
-func runTestDump(j *job.Job) error {
-	driver, err := source.NewDBDriver(&j.Database)
+func runTestDump(j *Job) error {
+	driver, err := source.NewDBDriver(j.Database.Type)
 	if err != nil {
 		return fmt.Errorf("db driver error: %w", err)
 	}
 
-	fileReader, err := reader.GetFileReader(&j.Database.SSH)
+	fileReader, err := reader.GetFileReader(j.ReaderSSH())
 	if err != nil {
 		return fmt.Errorf("file reader error: %w", err)
 	}
 	defer fileReader.Close()
 
-	return driver.Test(j, fileReader)
+	return driver.Test(j.SourceJob(), fileReader)
 }
 
-func TestStorage(j *job.Job) error {
+func TestStorage(j *Job) error {
 	start := time.Now()
 	err := runTestStorage(j)
 	d := time.Since(start).Round(time.Millisecond)
-	utils.AppendLog(j.ID, "test storage", d, err)
+	AppendLog(j.ID, "test storage", d, err)
 	if err != nil {
 		return err
 	}
@@ -51,7 +49,7 @@ func TestStorage(j *job.Job) error {
 	return nil
 }
 
-func runTestStorage(j *job.Job) error {
+func runTestStorage(j *Job) error {
 	client, err := storage.NewStorageClient(&j.Storage)
 	if err != nil {
 		return fmt.Errorf("failed to init storage client: %w", err)

@@ -1,30 +1,26 @@
-// Package action implements the backup and test operations that run against a job.
-package action
+package job
 
 import (
-	"archive/zip"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/tofunmiadewuyi/dbq/utils"
 	"github.com/tofunmiadewuyi/dbq/internal/config"
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 	"github.com/tofunmiadewuyi/dbq/internal/reader"
 	"github.com/tofunmiadewuyi/dbq/internal/source"
 	"github.com/tofunmiadewuyi/dbq/internal/storage"
+	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
-func CreateBackup(j *job.Job) error {
+func CreateBackup(j *Job) error {
 	start := time.Now()
 
 	err := runBackup(j)
 
 	d := time.Since(start).Round(time.Millisecond)
-	utils.AppendLog(j.ID, "backup", d, err)
+	AppendLog(j.ID, "backup", d, err)
 
 	if err != nil {
 		return err
@@ -34,41 +30,41 @@ func CreateBackup(j *job.Job) error {
 	return nil
 }
 
-func runBackup(j *job.Job) error {
-	driver, err := source.NewDBDriver(&j.Database)
+func runBackup(j *Job) error {
+	driver, err := source.NewDBDriver(j.Database.Type)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve db driver: %w", err)
 	}
 
-	fileReader, err := reader.GetFileReader(&j.Database.SSH)
+	fileReader, err := reader.GetFileReader(j.ReaderSSH())
 	if err != nil {
 		return fmt.Errorf("failed to init file reader: %w", err)
 	}
 	defer fileReader.Close()
 
 	// server-side path: dump on the remote host and upload directly to cloud
-	if j.Database.SSH.Required && j.Database.SSH.UseServer && j.StorageType == config.StorageCloud {
+	if j.Database.SSH.Required && j.Database.SSH.UseServer && j.StorageType == storage.TypeCloud {
 		return runServerSideBackup(j, driver, fileReader)
 	}
 
-	dumpPath, err := driver.Dump(j, fileReader)
+	dumpPath, err := driver.Dump(j.SourceJob(), fileReader)
 	if err != nil {
 		return fmt.Errorf("failed to dump database: %w", err)
 	}
 	defer os.Remove(dumpPath)
 
 	zipPath := dumpPath + ".zip"
-	if err := ZipFile(dumpPath, zipPath); err != nil {
+	if err := utils.ZipFile(dumpPath, zipPath); err != nil {
 		return fmt.Errorf("failed to compress dump: %w", err)
 	}
 	defer os.Remove(zipPath)
 
 	switch j.StorageType {
-	case config.StorageCloud:
+	case storage.TypeCloud:
 		return uploadToCloud(j, zipPath)
-	case config.StorageDirectory:
+	case storage.TypeDirectory:
 		dest := filepath.Join(j.Destination, filepath.Base(zipPath))
-		return copyFile(zipPath, dest)
+		return utils.CopyFile(zipPath, dest)
 	default:
 		return fmt.Errorf("unknown storage type: %s", j.StorageType)
 	}
@@ -78,12 +74,12 @@ func runBackup(j *job.Job) error {
 // then uploads it directly from the server to cloud storage using a presigned URL.
 // this avoids routing the dump through the home internet connection
 // and no credentials leave your machine.
-func runServerSideBackup(j *job.Job, driver source.DBDriver, r reader.FileReader) error {
+func runServerSideBackup(j *Job, driver source.DBDriver, r reader.FileReader) error {
 	timestamp := time.Now()
 	fileName := fmt.Sprintf("%s_%s_%s.dump", j.ID, j.Database.Name, timestamp.Format("20060102_150405"))
 	remotePath := fmt.Sprintf("/var/tmp/%s/%s", config.AppName, fileName)
 
-	if err := driver.DumpRemote(j, r, remotePath); err != nil {
+	if err := driver.DumpRemote(j.SourceJob(), r, remotePath); err != nil {
 		return fmt.Errorf("server-side dump failed: %w", err)
 	}
 	defer func() { r.Exec(fmt.Sprintf("rm -f '%s'", remotePath)) }() //nolint: errcheck
@@ -108,7 +104,7 @@ func runServerSideBackup(j *job.Job, driver source.DBDriver, r reader.FileReader
 	return nil
 }
 
-func uploadToCloud(j *job.Job, zipPath string) error {
+func uploadToCloud(j *Job, zipPath string) error {
 	client, err := storage.NewStorageClient(&j.Storage)
 	if err != nil {
 		return fmt.Errorf("failed to init storage client: %w", err)
@@ -136,62 +132,3 @@ func uploadToCloud(j *job.Job, zipPath string) error {
 	return nil
 }
 
-// ZipFile compresses a single file at srcPath into a zip archive at zipPath.
-func ZipFile(srcPath, zipPath string) error {
-	zipFile, err := os.Create(zipPath)
-	if err != nil {
-		return err
-	}
-	defer zipFile.Close()
-
-	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	src, err := os.Open(srcPath)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	info, err := src.Stat()
-	if err != nil {
-		return err
-	}
-
-	header, err := zip.FileInfoHeader(info)
-	if err != nil {
-		return err
-	}
-	header.Name = filepath.Base(srcPath)
-	header.Method = zip.Deflate
-
-	writer, err := zipWriter.CreateHeader(header)
-	if err != nil {
-		return err
-	}
-
-	_, err = io.Copy(writer, src)
-	return err
-}
-
-// copyFile copies a file from src to dst.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return err
-	}
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	return err
-}
