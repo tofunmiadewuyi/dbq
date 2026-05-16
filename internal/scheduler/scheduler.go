@@ -3,15 +3,19 @@ package scheduler
 
 import (
 	"runtime"
-
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 )
+
+type SchedulerJob struct {
+	Name      string
+	ID        string
+	Frequency string
+}
 
 // Scheduler manages the lifecycle of a scheduled backup job on the host OS.
 type Scheduler interface {
-	Install(j *job.Job) error
-	Uninstall(j *job.Job) error
-	IsInstalled(j *job.Job) bool
+	Install(j *SchedulerJob) error
+	Uninstall(jobId string) error
+	IsInstalled(jobId string) bool
 }
 
 // New returns the appropriate Scheduler implementation for the current OS.
@@ -24,10 +28,10 @@ func New() Scheduler {
 	}
 }
 
-var def Scheduler
+var defaultScheduler Scheduler
 
-func init() { def = New() }
+func init() { defaultScheduler = New() }
 
-func Install(j *job.Job) error    { return def.Install(j) }
-func Uninstall(j *job.Job) error  { return def.Uninstall(j) }
-func IsInstalled(j *job.Job) bool { return def.IsInstalled(j) }
+func Install(j *SchedulerJob) error { return defaultScheduler.Install(j) }
+func Uninstall(jobId string) error  { return defaultScheduler.Uninstall(jobId) }
+func IsInstalled(jobId string) bool { return defaultScheduler.IsInstalled(jobId) }

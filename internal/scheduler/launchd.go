@@ -7,18 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tofunmiadewuyi/dbq/internal/job"
+	"github.com/tofunmiadewuyi/dbq/internal/config"
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
 type LaunchdScheduler struct{}
 
-func (l *LaunchdScheduler) IsInstalled(j *job.Job) bool {
-	_, err := os.Stat(plistPath(j))
+func (l *LaunchdScheduler) IsInstalled(jobId string) bool {
+	_, err := os.Stat(plistPath(jobId))
 	return err == nil
 }
 
-func (l *LaunchdScheduler) Install(j *job.Job) error {
+func (l *LaunchdScheduler) Install(j *SchedulerJob) error {
 	if _, err := exec.LookPath("launchctl"); err != nil {
 		return fmt.Errorf("scheduling requires launchd — not available on this system")
 	}
@@ -38,8 +38,8 @@ func (l *LaunchdScheduler) Install(j *job.Job) error {
 		return fmt.Errorf("failed to create LaunchAgents dir: %w", err)
 	}
 
-	path := plistPath(j)
-	if err := os.WriteFile(path, []byte(plistContent(j, binaryPath, interval)), 0644); err != nil {
+	path := plistPath(j.ID)
+	if err := os.WriteFile(path, []byte(plistContent(j.ID, binaryPath, interval)), 0644); err != nil {
 		return fmt.Errorf("failed to write plist: %w", err)
 	}
 
@@ -51,8 +51,8 @@ func (l *LaunchdScheduler) Install(j *job.Job) error {
 	return nil
 }
 
-func (l *LaunchdScheduler) Uninstall(j *job.Job) error {
-	path := plistPath(j)
+func (l *LaunchdScheduler) Uninstall(jobId string) error {
+	path := plistPath(jobId)
 	exec.Command("launchctl", "unload", path).Run() //nolint:errcheck
 	os.Remove(path)
 	return nil
@@ -66,15 +66,15 @@ func plistDir() string {
 	return filepath.Join(home, "Library", "LaunchAgents")
 }
 
-func plistLabel(j *job.Job) string {
-	return fmt.Sprintf("com.dbq.%s", j.ID)
+func plistLabel(jobId string) string {
+	return fmt.Sprintf("com.%s.%s", config.AppName, jobId)
 }
 
-func plistPath(j *job.Job) string {
-	return filepath.Join(plistDir(), plistLabel(j)+".plist")
+func plistPath(jobId string) string {
+	return filepath.Join(plistDir(), plistLabel(jobId)+".plist")
 }
 
-func plistContent(j *job.Job, binaryPath string, interval map[string]int) string {
+func plistContent(jobId string, binaryPath string, interval map[string]int) string {
 	var intervalEntries strings.Builder
 	for _, key := range []string{"Minute", "Hour", "Day", "Month", "Weekday"} {
 		if v, ok := interval[key]; ok {
@@ -99,5 +99,5 @@ func plistContent(j *job.Job, binaryPath string, interval map[string]int) string
 %s	</dict>
 </dict>
 </plist>
-`, plistLabel(j), binaryPath, j.ID, intervalEntries.String())
+`, plistLabel(jobId), binaryPath, jobId, intervalEntries.String())
 }

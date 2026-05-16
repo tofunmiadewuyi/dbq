@@ -8,18 +8,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tofunmiadewuyi/dbq/internal/job"
+	"github.com/tofunmiadewuyi/dbq/internal/config"
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
 type SystemdScheduler struct{}
 
-func (s *SystemdScheduler) IsInstalled(j *job.Job) bool {
-	_, err := os.Stat(filepath.Join(unitDir(), timerFileName(j)))
+func (s *SystemdScheduler) IsInstalled(jobId string) bool {
+	_, err := os.Stat(filepath.Join(unitDir(), timerFileName(jobId)))
 	return err == nil
 }
 
-func (s *SystemdScheduler) Install(j *job.Job) error {
+func (s *SystemdScheduler) Install(j *SchedulerJob) error {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return fmt.Errorf("scheduling requires systemd — not available on this system")
 	}
@@ -34,34 +34,34 @@ func (s *SystemdScheduler) Install(j *job.Job) error {
 		return fmt.Errorf("failed to create systemd unit dir: %w", err)
 	}
 
-	service := serviceContent(j, binaryPath)
-	if err := os.WriteFile(filepath.Join(dir, serviceFileName(j)), []byte(service), 0644); err != nil {
+	service := serviceContent(j.Name, j.ID, binaryPath)
+	if err := os.WriteFile(filepath.Join(dir, serviceFileName(j.ID)), []byte(service), 0644); err != nil {
 		return fmt.Errorf("failed to write service file: %w", err)
 	}
 
-	timer, err := timerContent(j)
+	timer, err := timerContent(j.Name, j.Frequency)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, timerFileName(j)), []byte(timer), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, timerFileName(j.ID)), []byte(timer), 0644); err != nil {
 		return fmt.Errorf("failed to write timer file: %w", err)
 	}
 
-	if err := systemctl(j, "enable", "--now"); err != nil {
-		os.Remove(filepath.Join(dir, timerFileName(j)))
-		os.Remove(filepath.Join(dir, serviceFileName(j)))
+	if err := systemctl(j.ID, "enable", "--now"); err != nil {
+		os.Remove(filepath.Join(dir, timerFileName(j.ID)))
+		os.Remove(filepath.Join(dir, serviceFileName(j.ID)))
 		return err
 	}
 	enableLinger()
 	return nil
 }
 
-func (s *SystemdScheduler) Uninstall(j *job.Job) error {
-	systemctl(j, "disable", "--now") //nolint:errcheck
+func (s *SystemdScheduler) Uninstall(jobId string) error {
+	systemctl(jobId, "disable", "--now") //nolint:errcheck
 
 	dir := unitDir()
-	os.Remove(filepath.Join(dir, timerFileName(j)))
-	os.Remove(filepath.Join(dir, serviceFileName(j)))
+	os.Remove(filepath.Join(dir, timerFileName(jobId)))
+	os.Remove(filepath.Join(dir, serviceFileName(jobId)))
 
 	return daemonReload()
 }
@@ -74,26 +74,26 @@ func unitDir() string {
 	return filepath.Join(home, ".config", "systemd", "user")
 }
 
-func serviceFileName(j *job.Job) string {
-	return fmt.Sprintf("dbq-%s.service", j.ID)
+func serviceFileName(id string) string {
+	return fmt.Sprintf("%s-%s.service", config.AppName, id)
 }
 
-func timerFileName(j *job.Job) string {
-	return fmt.Sprintf("dbq-%s.timer", j.ID)
+func timerFileName(id string) string {
+	return fmt.Sprintf("%s-%s.timer", config.AppName, id)
 }
 
-func serviceContent(j *job.Job, binaryPath string) string {
+func serviceContent(jobName, jobId string, binaryPath string) string {
 	return fmt.Sprintf(`[Unit]
 Description=dbq backup — %s
 
 [Service]
 Type=oneshot
 ExecStart=%s run %s
-`, j.Name, binaryPath, j.ID)
+`, jobName, binaryPath, jobId)
 }
 
-func timerContent(j *job.Job) (string, error) {
-	onCalendar, err := utils.CronToOnCalendar(j.Frequency)
+func timerContent(jobName, jobFrequency string) (string, error) {
+	onCalendar, err := utils.CronToOnCalendar(jobFrequency)
 	if err != nil {
 		return "", err
 	}
@@ -107,16 +107,16 @@ Persistent=true
 
 [Install]
 WantedBy=timers.target
-`, j.Name, onCalendar), nil
+`, jobName, onCalendar), nil
 }
 
-func systemctl(j *job.Job, args ...string) error {
+func systemctl(jobId string, args ...string) error {
 	base := []string{"systemctl"}
 	if os.Getuid() != 0 {
 		base = append(base, "--user")
 	}
 	base = append(base, args...)
-	base = append(base, timerFileName(j))
+	base = append(base, timerFileName(jobId))
 
 	out, err := exec.Command(base[0], base[1:]...).CombinedOutput()
 	if err != nil {
