@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/tofunmiadewuyi/dbq/utils"
 	"github.com/tofunmiadewuyi/dbq/internal/config"
 	"github.com/tofunmiadewuyi/dbq/internal/input"
+	"github.com/tofunmiadewuyi/dbq/internal/secrets"
+	"github.com/tofunmiadewuyi/dbq/internal/storage"
+	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
 func StartNewJob() error {
-	return JobFlow(&Job{})
+	return JobFlow(&Job{sm: secrets.New()})
 }
 
 func EditJob(j *Job) error {
@@ -18,6 +20,7 @@ func EditJob(j *Job) error {
 }
 
 func JobFlow(j *Job) error {
+
 	title := "NEW JOB"
 	if j.Name != "" {
 		title = "EDIT JOB"
@@ -60,7 +63,7 @@ func JobFlow(j *Job) error {
 	}, db.Host)
 
 	if db.Port == "" {
-		db.Port, _ = utils.DefaultDBPort(db.Type)
+		db.Port, _ = DefaultDBPort(db.Type)
 	}
 	db.Port = input.AskValid("Database port: ", func(n string) error {
 		return input.ValidateInt("Database port", n)
@@ -115,25 +118,25 @@ func JobFlow(j *Job) error {
 	}
 
 	// storage
-	storageType := input.ChooseWithDefault("How will you be storing backups: ", []string{string(config.StorageCloud), string(config.StorageDirectory)}, string(j.StorageType))
+	storageTypeAnswer := input.ChooseWithDefault("How will you be storing backups: ", []string{string(storage.TypeCloud), string(storage.TypeDirectory)}, string(j.StorageType))
 
-	if config.StorageType(storageType) == config.StorageDirectory {
-		j.StorageType = config.StorageDirectory
-		j.Storage = CloudStorage{}
+	if storage.StorageType(storageTypeAnswer) == storage.TypeDirectory {
+		j.StorageType = storage.TypeDirectory
+		j.Storage = storage.CloudStorage{}
 		j.Destination = input.AskValid("Path to directory: ", func(n string) error {
 			return input.ValidateField("Destination path", n)
 		}, j.Destination)
 	} else {
-		j.StorageType = config.StorageCloud
+		j.StorageType = storage.TypeCloud
 		j.Destination = ""
 
 		var cloud = &j.Storage
 		if cloud.Provider == "" {
-			cloud.Provider = config.S3
+			cloud.Provider = storage.TypeS3
 		}
-		cloud.Provider = config.StorageProvider(input.ChooseWithDefault("Storage Provider: ", []string{string(config.S3), string(config.R2)}, string(cloud.Provider)))
+		cloud.Provider = storage.Provider(input.ChooseWithDefault("Storage Provider: ", []string{string(storage.TypeS3), string(storage.TypeR2)}, string(cloud.Provider)))
 
-		if cloud.Provider == config.S3 {
+		if cloud.Provider == storage.TypeS3 {
 			cloud.Region = input.AskValid("AWS Region: ", func(n string) error {
 				return input.ValidateField("AWS Region", n)
 			}, cloud.Region)

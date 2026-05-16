@@ -6,55 +6,52 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"text/template"
 
-	"github.com/BurntSushi/toml"
+	"github.com/tofunmiadewuyi/dbq/internal/reader"
+	"github.com/tofunmiadewuyi/dbq/internal/secrets"
+	"github.com/tofunmiadewuyi/dbq/internal/source"
+	"github.com/tofunmiadewuyi/dbq/internal/storage"
 	"github.com/tofunmiadewuyi/dbq/utils"
-	"github.com/tofunmiadewuyi/dbq/internal/config"
 )
 
-type SSHConn struct {
-	Required  bool   `toml:"required"`
-	Port      int    `toml:"sshport"`
-	Host      string `toml:"sshhost"`
-	Key       string `toml:"sshkey"`
-	User      string `toml:"sshuser"`
-	UseServer bool   `toml:"useserver"`
-}
+var jobTemplate = template.Must(template.New("job").Parse(`# dbq job configuration
+# Safe to edit: name, frequency, destination, and all database/storage connection fields.
+# Do not edit: id — the scheduler uses this to identify the job.
+# Credentials (password, access_key, secret_key) are stored in the system keychain.
+# The empty strings below are intentional — editing them here has no effect.
 
-type DB struct {
-	Name     string              `toml:"name"`
-	Type     config.DatabaseType `toml:"type"`
-	Port     string              `toml:"port"`
-	Host     string              `toml:"host"`
-	Username string              `toml:"username"`
-	Password string              `toml:"password"`
-	SSH      SSHConn             `toml:"ssh"`
-}
+name         = {{printf "%q" .Name}}
+id           = {{printf "%q" .ID}}
+storage_type = {{printf "%q" .StorageType}}
+destination  = {{printf "%q" .Destination}}
+frequency    = {{printf "%q" .Frequency}}
 
-type CloudStorage struct {
-	// Access Key ID
-	AKID string `toml:"access_key"`
-	// Secret access key
-	SAK string `toml:"secret_key"`
-	// Storage Url
-	Endpoint string `toml:"endpoint"`
-	// Bucket name
-	Bucket string `toml:"bucket"`
-	// Region
-	Region string `toml:"region"`
-	// Provider
-	Provider config.StorageProvider `toml:"provider"`
-}
+[database]
+name     = {{printf "%q" .Database.Name}}
+type     = {{printf "%q" .Database.Type}}
+host     = {{printf "%q" .Database.Host}}
+port     = {{printf "%q" .Database.Port}}
+username = {{printf "%q" .Database.Username}}
+password = ""  # stored in system keychain
 
-type Job struct {
-	Name        string             `toml:"name"`
-	ID          string             `toml:"id"`
-	StorageType config.StorageType `toml:"storage_type"`
-	Destination string             `toml:"destination"` // path if directory
-	Frequency   string             `toml:"frequency"`
-	Database    DB                 `toml:"database"`
-	Storage     CloudStorage       `toml:"storage"`
-}
+[database.ssh]
+required  = {{.Database.SSH.Required}}
+sshhost   = {{printf "%q" .Database.SSH.Host}}
+sshport   = {{.Database.SSH.Port}}
+sshuser   = {{printf "%q" .Database.SSH.User}}
+sshkey    = {{printf "%q" .Database.SSH.Key}}
+useserver = {{.Database.SSH.UseServer}}
+
+[storage]
+provider   = {{printf "%q" .Storage.Provider}}
+bucket     = {{printf "%q" .Storage.Bucket}}
+region     = {{printf "%q" .Storage.Region}}
+endpoint   = {{printf "%q" .Storage.Endpoint}}
+access_key = ""  # stored in system keychain
+secret_key = ""  # stored in system keychain
+`))
+
 
 func (j *Job) PrintState(title string) {
 	w := 68
@@ -96,7 +93,7 @@ func (j *Job) PrintState(title string) {
 	fmt.Printf("├%s┤\n", border)
 	row("Provider:   ", string(j.Storage.Provider))
 	row("Bucket:     ", j.Storage.Bucket)
-	if j.Storage.Provider == config.S3 {
+	if j.Storage.Provider == storage.TypeS3 {
 		row("Region:     ", j.Storage.Region)
 	} else {
 		row("Endpoint:   ", j.Storage.Endpoint)
@@ -104,18 +101,72 @@ func (j *Job) PrintState(title string) {
 	fmt.Printf("└%s┘\n\n", border)
 }
 
+func (j *Job) SourceJob() *source.SourceJob {
+	return &source.SourceJob{
+		ID:       j.ID,
+		Name:     j.Database.Name,
+		Host:     j.Database.Host,
+		Port:     j.Database.Port,
+		Username: j.Database.Username,
+		Password: j.Database.Password,
+	}
+}
+
+func (j *Job) ReaderSSH() *reader.SSHConn {
+	return &reader.SSHConn{
+		Required:  j.Database.SSH.Required,
+		Port:      j.Database.SSH.Port,
+		Host:      j.Database.SSH.Host,
+		Key:       j.Database.SSH.Key,
+		User:      j.Database.SSH.User,
+		UseServer: j.Database.SSH.UseServer,
+	}
+}
+
+func (j *Job) DeleteSecrets() error {
+	return j.sm.Delete(j.ID)
+}
+
 func (j *Job) WriteJob() error {
-	dir := utils.JobsDir()
+	if err := storeJobSecrets(j); err != nil {
+		return err
+	}
+
+	safe := *j
+	safe.Database.Password = ""
+	safe.Storage.AKID = ""
+	safe.Storage.SAK = ""
+
+	dir := JobsDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
 	path := filepath.Join(dir, j.ID+".toml")
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	return toml.NewEncoder(f).Encode(j)
+	return jobTemplate.Execute(f, safe)
+}
+
+func storeJobSecrets(j *Job) error {
+	if j.Database.Password != "" {
+		if err := j.sm.Set(j.ID, secrets.KeyDBPassword, j.Database.Password); err != nil {
+			return fmt.Errorf("failed to store db password: %w", err)
+		}
+	}
+	if j.Storage.AKID != "" {
+		if err := j.sm.Set(j.ID, secrets.KeyStorageAKID, j.Storage.AKID); err != nil {
+			return fmt.Errorf("failed to store storage akid: %w", err)
+		}
+	}
+	if j.Storage.SAK != "" {
+		if err := j.sm.Set(j.ID, secrets.KeyStorageSAK, j.Storage.SAK); err != nil {
+			return fmt.Errorf("failed to store storage sak: %w", err)
+		}
+	}
+	return nil
 }
