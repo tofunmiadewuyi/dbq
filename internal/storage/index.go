@@ -7,8 +7,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/tofunmiadewuyi/dbq/internal/config"
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 )
 
 // BackupKey returns the S3/R2 object key for a backup.
@@ -26,11 +24,11 @@ type StorageClient interface {
 }
 
 // NewStorageClient returns the correct StorageClient for the job's configured provider.
-func NewStorageClient(cfg *job.CloudStorage) (StorageClient, error) {
+func NewStorageClient(cfg *CloudStorage) (StorageClient, error) {
 	switch cfg.Provider {
-	case config.S3:
+	case TypeS3:
 		return NewS3Client(cfg)
-	case config.R2:
+	case TypeR2:
 		return NewR2Client(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", cfg.Provider)

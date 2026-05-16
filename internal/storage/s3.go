@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 )
 
 // S3Client wraps the AWS S3 client with helper methods
@@ -23,7 +22,7 @@ type S3Client struct {
 }
 
 // NewS3Client creates a new S3 client
-func NewS3Client(cfg *job.CloudStorage) (*S3Client, error) {
+func NewS3Client(cfg *CloudStorage) (*S3Client, error) {
 	if cfg.Region == "" || cfg.AKID == "" || cfg.SAK == "" || cfg.Bucket == "" {
 		return nil, fmt.Errorf("missing required AWS configuration")
 	}

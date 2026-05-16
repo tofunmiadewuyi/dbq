@@ -11,7 +11,6 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 )
 
 // R2Client wraps an S3-compatible client pointed at a Cloudflare R2 endpoint.
@@ -20,7 +19,7 @@ type R2Client struct {
 	bucket string
 }
 
-func NewR2Client(cfg *job.CloudStorage) (*R2Client, error) {
+func NewR2Client(cfg *CloudStorage) (*R2Client, error) {
 	if cfg.Endpoint == "" || cfg.AKID == "" || cfg.SAK == "" || cfg.Bucket == "" {
 		return nil, fmt.Errorf("missing required R2 configuration (endpoint, access_key, secret_key, bucket)")
 	}
