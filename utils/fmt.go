@@ -132,8 +132,8 @@ func (b *DisplayBox) CreateRow(label, value string) {
 // content is the exact string that was printed before the prompt; n is the integer the user selected.
 func DimPrevious(content string, n int) {
 	lines := strings.Count(content, "\n") + 1 // +1 for the "Select: N\n" line
-	fmt.Printf("\033[%dA", lines)              // cursor up
-	fmt.Print("\033[0J")                        // clear from cursor to end of screen
+	fmt.Printf("\033[%dA", lines)             // cursor up
+	fmt.Print("\033[0J")                      // clear from cursor to end of screen
 	fmt.Printf("\033[2m%sSelect: %d\n\033[0m", content, n)
 }
 
