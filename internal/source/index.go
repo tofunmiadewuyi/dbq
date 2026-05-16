@@ -5,26 +5,31 @@ import (
 	"fmt"
 
 	"github.com/tofunmiadewuyi/dbq/internal/config"
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 	"github.com/tofunmiadewuyi/dbq/internal/reader"
 )
 
-type DBDriver interface {
-	Dump(job *job.Job, r reader.FileReader) (string, error)
-	// DumpRemote runs pg_dump on the remote host writing output to remotePath on that host.
-	// used when useserver=true to avoid streaming the dump over home internet.
-	DumpRemote(job *job.Job, r reader.FileReader, remotePath string) error
-	Test(job *job.Job, r reader.FileReader) error
+type SourceJob struct {
+	ID       string
+	Name     string
+	Host     string
+	Port     string
+	Username string
+	Password string
 }
 
-func NewDBDriver(db *job.DB) (DBDriver, error) {
+type DBDriver interface {
+	Dump(j *SourceJob, r reader.FileReader) (string, error)
+	DumpRemote(j *SourceJob, r reader.FileReader, remotePath string) error
+	Test(j *SourceJob, r reader.FileReader) error
+}
 
-	switch db.Type {
+func NewDBDriver(dbType config.DatabaseType) (DBDriver, error) {
+	switch dbType {
 	case config.Postgres:
 		return &Postgres{}, nil
 	case config.MySQL:
 		return &MySQL{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported database type: %v", db)
+		return nil, fmt.Errorf("unsupported database type: %v", dbType)
 	}
 }

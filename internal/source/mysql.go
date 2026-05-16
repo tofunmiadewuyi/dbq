@@ -8,18 +8,17 @@ import (
 	"time"
 
 	"github.com/tofunmiadewuyi/dbq/internal/config"
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 	"github.com/tofunmiadewuyi/dbq/internal/reader"
 )
 
 type MySQL struct{}
 
-func (m *MySQL) Dump(job *job.Job, r reader.FileReader) (string, error) {
+func (m *MySQL) Dump(j *SourceJob, r reader.FileReader) (string, error) {
 	if err := checkMysqldump(r); err != nil {
 		return "", err
 	}
 
-	fileName := fmt.Sprintf("%s_%s_%s.sql", job.ID, job.Database.Name, time.Now().Format("20060102_150405"))
+	fileName := fmt.Sprintf("%s_%s_%s.sql", j.ID, j.Name, time.Now().Format("20060102_150405"))
 	outPath := filepath.Join(config.TmpPath, config.AppName, fileName)
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
@@ -33,11 +32,7 @@ func (m *MySQL) Dump(job *job.Job, r reader.FileReader) (string, error) {
 	defer f.Close()
 
 	cmd := fmt.Sprintf("MYSQL_PWD=%s mysqldump -h %s -P %s -u %s %s",
-		job.Database.Password,
-		job.Database.Host,
-		job.Database.Port,
-		job.Database.Username,
-		job.Database.Name,
+		j.Password, j.Host, j.Port, j.Username, j.Name,
 	)
 
 	if err := r.ExecStream(cmd, f); err != nil {
@@ -49,7 +44,7 @@ func (m *MySQL) Dump(job *job.Job, r reader.FileReader) (string, error) {
 }
 
 // DumpRemote runs mysqldump on the remote host and writes the output to remotePath on that host.
-func (m *MySQL) DumpRemote(j *job.Job, r reader.FileReader, remotePath string) error {
+func (m *MySQL) DumpRemote(j *SourceJob, r reader.FileReader, remotePath string) error {
 	if err := checkMysqldump(r); err != nil {
 		return err
 	}
@@ -57,12 +52,7 @@ func (m *MySQL) DumpRemote(j *job.Job, r reader.FileReader, remotePath string) e
 	cmd := fmt.Sprintf(
 		"mkdir -p '%s' && MYSQL_PWD='%s' mysqldump -h %s -P %s -u %s %s > '%s'",
 		filepath.Dir(remotePath),
-		j.Database.Password,
-		j.Database.Host,
-		j.Database.Port,
-		j.Database.Username,
-		j.Database.Name,
-		remotePath,
+		j.Password, j.Host, j.Port, j.Username, j.Name, remotePath,
 	)
 
 	if _, err := r.Exec(cmd); err != nil {
@@ -72,16 +62,13 @@ func (m *MySQL) DumpRemote(j *job.Job, r reader.FileReader, remotePath string) e
 	return nil
 }
 
-func (m *MySQL) Test(job *job.Job, r reader.FileReader) error {
+func (m *MySQL) Test(j *SourceJob, r reader.FileReader) error {
 	if err := checkMysqldump(r); err != nil {
 		return err
 	}
 
 	cmd := fmt.Sprintf("MYSQL_PWD=%s mysqladmin -h %s -P %s -u %s ping",
-		job.Database.Password,
-		job.Database.Host,
-		job.Database.Port,
-		job.Database.Username,
+		j.Password, j.Host, j.Port, j.Username,
 	)
 
 	return r.ExecStream(cmd, io.Discard)
