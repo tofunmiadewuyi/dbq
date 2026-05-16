@@ -62,6 +62,8 @@ dbq start
 
 Launches the interactive menu. From here you can create jobs, run them manually, view logs, test connections, edit, schedule/unschedule, and delete them.
 
+> After creating a job, go to **Manage Jobs → [job name] → Schedule** to activate the backup timer. Jobs are not scheduled automatically.
+
 ### Run a job directly (used by systemd / launchd)
 
 ```bash
