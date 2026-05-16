@@ -2,6 +2,8 @@ package job
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/tofunmiadewuyi/dbq/internal/config"
@@ -20,18 +22,27 @@ func EditJob(j *Job) error {
 }
 
 func JobFlow(j *Job) error {
+	isNew := j.Name == ""
 
 	title := "NEW JOB"
-	if j.Name != "" {
+	if !isNew {
 		title = "EDIT JOB"
 	}
 
 	// name + id
-	if j.Name == "" {
+	if isNew {
 		j.Name = input.AskValid("Job name: ", func(n string) error {
 			return input.ValidateField("name", n)
 		}, "")
 		j.ID = utils.StringToID(j.Name)
+
+		// overwrite check
+		if _, err := os.Stat(filepath.Join(JobsDir(), j.ID+".toml")); err == nil {
+			fmt.Printf("A job named %q already exists.\n", j.Name)
+			if config.BinaryAnswer(input.Choose("Overwrite it?", []string{string(config.Yes), string(config.No)})) == config.No {
+				return nil
+			}
+		}
 	} else {
 		fmt.Printf("Name: %s\n", j.Name)
 	}
@@ -157,6 +168,17 @@ func JobFlow(j *Job) error {
 		}, cloud.Bucket)
 	}
 
+	// duplicate DB check for new jobs
+	if isNew {
+		if dupe := backupAlreadyExists(j); dupe != nil {
+			fmt.Printf("Warning: job %q already targets the same database (%s %s/%s).\n",
+				dupe.Name, dupe.Database.Type, dupe.Database.Host, dupe.Database.Name)
+			if config.BinaryAnswer(input.Choose("Save anyway?", []string{string(config.Yes), string(config.No)})) == config.No {
+				return nil
+			}
+		}
+	}
+
 	err := j.WriteJob()
 	if err != nil {
 		fmt.Println("Could not save job")
@@ -165,4 +187,21 @@ func JobFlow(j *Job) error {
 	}
 
 	return err
+}
+
+// backupAlreadyExists returns the first existing job that targets the same database,
+// identified by type + host + name.
+func backupAlreadyExists(j *Job) *Job {
+	existing, err := GetJobs(j.sm)
+	if err != nil {
+		return nil
+	}
+	for _, e := range existing {
+		if e.Database.Type == j.Database.Type &&
+			e.Database.Host == j.Database.Host &&
+			e.Database.Name == j.Database.Name {
+			return &e
+		}
+	}
+	return nil
 }
