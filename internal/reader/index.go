@@ -5,9 +5,16 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-
-	"github.com/tofunmiadewuyi/dbq/internal/job"
 )
+
+type SSHConn struct {
+	Required  bool
+	Port      int
+	Host      string
+	Key       string
+	User      string
+	UseServer bool
+}
 
 // FileReader interface for reading files (local or remote)
 type FileReader interface {
@@ -22,7 +29,7 @@ type FileReader interface {
 }
 
 // GetFileReader is a helper to decide which reader to use
-func GetFileReader(ssh *job.SSHConn) (FileReader, error) {
+func GetFileReader(ssh *SSHConn) (FileReader, error) {
 	if ssh.Required {
 		// use ssh
 		if ssh.User == "" {
