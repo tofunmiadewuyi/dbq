@@ -13,6 +13,10 @@ A CLI tool for scheduling and running PostgreSQL and MySQL backups, with support
 - Per-job log files with timing for every run and test
 
 
+## Platform support
+
+macOS and Linux only. Windows is not currently supported.
+
 ## Requirements
 
 - `pg_dump` / `mysqldump` installed wherever the database lives (locally or on the SSH host)
