@@ -7,16 +7,15 @@ import (
 
 	"github.com/tofunmiadewuyi/dbq/internal/input"
 	"github.com/tofunmiadewuyi/dbq/internal/job"
-	"github.com/tofunmiadewuyi/dbq/internal/workflow"
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
-func startCLI() {
+func (s *Session) startCLI() {
 	// at startup
 	cleanStaleTempFiles()
 
 	for {
-		jobs, err := job.GetJobs()
+		jobs, err := job.GetJobs(s.sm)
 		if err != nil && !os.IsNotExist(err) {
 			fmt.Println("error reading jobs:", err)
 			os.Exit(1)
@@ -26,7 +25,7 @@ func startCLI() {
 		if len(jobs) > 0 {
 			menuOptions = append(menuOptions, input.Option{
 				Label:  fmt.Sprintf("Manage Jobs (%d)", len(jobs)),
-				Action: func() error { return workflow.ManageJobs(jobs) },
+				Action: func() error { return job.ManageJobs(s.sm, jobs) },
 			})
 		}
 		menuOptions = append(menuOptions, input.Option{

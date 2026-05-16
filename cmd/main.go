@@ -5,7 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/tofunmiadewuyi/dbq/internal/secrets"
 )
+
+type Session struct {
+	sm secrets.Manager
+}
 
 func main() {
 
@@ -14,16 +20,20 @@ func main() {
 		return
 	}
 
+	session := &Session{
+		sm: secrets.New(),
+	}
+
 	switch os.Args[1] {
 	case "start":
-		startCLI()
+		session.startCLI()
 
 	case "run":
 		if len(os.Args) != 3 {
 			fmt.Println("Usage: dbq run <job>")
 			return
 		}
-		runJob(os.Args[2])
+		session.runJob(os.Args[2])
 
 	case "logs":
 		id, lines, ok := parseLogsArgs(os.Args[2:])
@@ -31,7 +41,14 @@ func main() {
 			fmt.Println("Usage: dbq logs <job-id> [--lines <N>]")
 			return
 		}
-		printLogs(id, lines)
+		session.printLogs(id, lines)
+
+	case "delete":
+		if len(os.Args) != 3 {
+			fmt.Println("Usage: dbq delete <job-id>")
+			return
+		}
+		session.deleteJob(os.Args[2])
 
 	case "config":
 		if len(os.Args) != 3 {
@@ -39,13 +56,6 @@ func main() {
 			return
 		}
 		printConfig(os.Args[2])
-
-	case "delete":
-		if len(os.Args) != 3 {
-			fmt.Println("Usage: dbq delete <job-id>")
-			return
-		}
-		deleteJob(os.Args[2])
 
 	case "upgrade":
 		upgrade()
