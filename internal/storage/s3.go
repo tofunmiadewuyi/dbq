@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
@@ -41,7 +40,7 @@ func NewS3Client(cfg *CloudStorage) (*S3Client, error) {
 
 	client := s3.NewFromConfig(awsCfg)
 
-	log.Println("✓ S3 client initialized")
+	fmt.Println("✓ S3 client initialized")
 	return &S3Client{
 		client: client,
 		bucket: cfg.Bucket,
@@ -147,7 +146,7 @@ func (s *S3Client) TestConnection(ctx context.Context) error {
 		return fmt.Errorf("failed to access S3 bucket: %w", err)
 	}
 
-	log.Printf("✓ Successfully connected to S3 bucket: %s", s.bucket)
+	fmt.Printf("✓ Successfully connected to S3 bucket: %s\n", s.bucket)
 	return nil
 }
 
