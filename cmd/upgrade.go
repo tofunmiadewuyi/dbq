@@ -50,7 +50,8 @@ func upgrade() {
 	// Get latest release
 	resp, err := http.Get("https://api.github.com/repos/" + repo + "/releases/latest")
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "upgrade failed: %v\n", err)
+		os.Exit(1)
 	}
 	defer resp.Body.Close()
 
