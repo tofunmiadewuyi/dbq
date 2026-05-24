@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -69,7 +68,7 @@ func (r *R2Client) PresignPutURL(ctx context.Context, key string, expiry time.Du
 }
 
 func (r *R2Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, contentType string, reader io.Reader) (string, error) {
-	key := fmt.Sprintf("backups/%s/%s/%d", backupName, filepath.Base(dbName), timestamp.Unix())
+	key := BackupKey(backupName, dbName, timestamp, ".zip")
 
 	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(r.bucket),

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -57,9 +56,7 @@ func NewS3Client(cfg *CloudStorage) (*S3Client, error) {
 // reader: attachment file content
 // Returns the S3 key for the uploaded file
 func (s *S3Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName string, dbName string, contentType string, reader io.Reader) (string, error) {
-	// Sanitize filename to avoid path traversal issues
-	safeFilename := filepath.Base(dbName)
-	key := fmt.Sprintf("backups/%s/%s/%d", backupName, safeFilename, timestamp.Unix())
+	key := BackupKey(backupName, dbName, timestamp, ".zip")
 
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),

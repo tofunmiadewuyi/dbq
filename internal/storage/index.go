@@ -5,13 +5,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
-
 )
 
-// BackupKey returns the S3/R2 object key for a backup.
-func BackupKey(backupName, dbName string, timestamp time.Time) string {
-	return fmt.Sprintf("backups/%s/%s/%d", backupName, dbName, timestamp.Unix())
+// BackupFilename returns just the filename portion of a backup: job_db_20060102_150405.ext
+// ext must include the dot, e.g. ".zip" or ".dump.gz".
+func BackupFilename(jobName, dbName string, timestamp time.Time, ext string) string {
+	safeDBName := filepath.Base(dbName)
+	ts := timestamp.Format("20060102_150405")
+	return fmt.Sprintf("%s_%s_%s%s", jobName, safeDBName, ts, ext)
+}
+
+// BackupKey returns the full S3/R2 object key for a backup.
+// ext must include the dot, e.g. ".zip" or ".dump.gz".
+func BackupKey(jobName, dbName string, timestamp time.Time, ext string) string {
+	safeDBName := filepath.Base(dbName)
+	return fmt.Sprintf("backups/%s/%s/%s", jobName, safeDBName, BackupFilename(jobName, dbName, timestamp, ext))
 }
 
 // StorageClient is the shared interface every storage backend must satisfy.

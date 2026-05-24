@@ -76,26 +76,34 @@ func runBackup(j *Job) error {
 // and no credentials leave your machine.
 func runServerSideBackup(j *Job, driver source.DBDriver, r reader.FileReader) error {
 	timestamp := time.Now()
-	fileName := fmt.Sprintf("%s_%s_%s.dump", j.ID, j.Database.Name, timestamp.Format("20060102_150405"))
+	fileName := storage.BackupFilename(j.Name, j.Database.Name, timestamp, ".dump")
 	remotePath := fmt.Sprintf("/var/tmp/%s/%s", config.AppName, fileName)
 
 	if err := driver.DumpRemote(j.SourceJob(), r, remotePath); err != nil {
 		return fmt.Errorf("server-side dump failed: %w", err)
 	}
-	defer func() { r.Exec(fmt.Sprintf("rm -f '%s'", remotePath)) }() //nolint: errcheck
+
+	if _, err := r.Exec("which gzip"); err != nil {
+		return fmt.Errorf("gzip not found on remote host — install gzip")
+	}
+	if _, err := r.Exec(fmt.Sprintf("gzip '%s'", remotePath)); err != nil {
+		return fmt.Errorf("failed to compress dump: %w", err)
+	}
+	gzPath := remotePath + ".gz"
+	defer func() { r.Exec(fmt.Sprintf("rm -f '%s'", gzPath)) }() //nolint: errcheck
 
 	client, err := storage.NewStorageClient(&j.Storage)
 	if err != nil {
 		return fmt.Errorf("failed to init storage client: %w", err)
 	}
 
-	key := storage.BackupKey(j.Name, j.Database.Name, timestamp)
+	key := storage.BackupKey(j.Name, j.Database.Name, timestamp, ".dump.gz")
 	url, err := client.PresignPutURL(context.Background(), key, 2*time.Hour)
 	if err != nil {
 		return fmt.Errorf("failed to generate upload URL: %w", err)
 	}
 
-	curlCmd := fmt.Sprintf("curl -s -f -X PUT -T '%s' '%s'", remotePath, url)
+	curlCmd := fmt.Sprintf("curl -s -f -X PUT -T '%s' '%s'", gzPath, url)
 	if _, err := r.Exec(curlCmd); err != nil {
 		return fmt.Errorf("server upload failed: %w", err)
 	}
