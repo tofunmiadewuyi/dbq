@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+
 // dirEntry wraps fs.FileInfo to implement fs.DirEntry
 type dirEntry struct {
 	info fs.FileInfo
@@ -57,12 +58,9 @@ func NewSSHConnectionPool(host, user, keyPath string, port int, useSudo bool, po
 }
 
 func (p *SSHConnectionPool) createConnection() (*SSHFileReader, error) {
-	config := &ssh.ClientConfig{
-		User: p.user,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(p.signer),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	config, err := newSSHClientConfig(p.user, p.signer)
+	if err != nil {
+		return nil, err
 	}
 
 	addr := fmt.Sprintf("%s:%d", p.host, p.port)

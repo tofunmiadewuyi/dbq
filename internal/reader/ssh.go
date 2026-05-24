@@ -6,12 +6,30 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+func newSSHClientConfig(user string, signer ssh.Signer) (*ssh.ClientConfig, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("could not determine home directory: %w", err)
+	}
+	cb, err := knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
+	if err != nil {
+		return nil, fmt.Errorf("could not load ~/.ssh/known_hosts — connect to the host manually with ssh first: %w", err)
+	}
+	return &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: cb,
+	}, nil
+}
 
 // SSHFileReader reads from remote filesystem via SSH/SFTP
 type SSHFileReader struct {
@@ -47,13 +65,9 @@ func NewSSHFileReader(host, user, keyPath string, port int, useSudo bool) (*SSHF
 		return nil, fmt.Errorf("failed to parse ssh key: %w", err)
 	}
 
-	// ssh client config
-	config := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: proper host key verification
+	config, err := newSSHClientConfig(user, signer)
+	if err != nil {
+		return nil, err
 	}
 
 	// connect to ssh
