@@ -31,7 +31,7 @@ func (pg *Postgres) Dump(j *SourceJob, r reader.FileReader) (string, error) {
 	}
 	defer f.Close()
 
-	cmd := fmt.Sprintf("PGPASSWORD=%s pg_dump -Fc -h %s -p %s -U %s -d %s",
+	cmd := fmt.Sprintf("PGPASSWORD='%s' pg_dump -Fc -h %s -p %s -U %s -d %s",
 		j.Password, j.Host, j.Port, j.Username, j.Name,
 	)
 

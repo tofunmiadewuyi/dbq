@@ -31,7 +31,7 @@ func (m *MySQL) Dump(j *SourceJob, r reader.FileReader) (string, error) {
 	}
 	defer f.Close()
 
-	cmd := fmt.Sprintf("MYSQL_PWD=%s mysqldump -h %s -P %s -u %s %s",
+	cmd := fmt.Sprintf("MYSQL_PWD='%s' mysqldump -h %s -P %s -u %s %s",
 		j.Password, j.Host, j.Port, j.Username, j.Name,
 	)
 
