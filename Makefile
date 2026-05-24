@@ -1,3 +1,5 @@
+.PHONY: build start run release rerelease
+
 build:
 	go build -ldflags="-s -w -X main.version=dev" -o dbq ./cmd
 
