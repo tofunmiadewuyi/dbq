@@ -13,8 +13,9 @@ import (
 )
 
 // listBackups is shared by the S3 and R2 clients (both wrap *s3.Client). It
-// paginates every object under the job/db prefix and returns them as
-// BackupObjects.
+// paginates every object under the job/db prefix and returns the ones whose
+// names carry a valid dbq timestamp; anything unrecognized is skipped so it's
+// never considered for pruning.
 func listBackups(ctx context.Context, client *s3.Client, bucket, jobName, dbName string) ([]BackupObject, error) {
 	prefix := BackupPrefix(jobName, dbName)
 	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
@@ -29,9 +30,14 @@ func listBackups(ctx context.Context, client *s3.Client, bucket, jobName, dbName
 			return nil, fmt.Errorf("failed to list backups: %w", err)
 		}
 		for _, obj := range page.Contents {
-			if obj.Key != nil {
-				objects = append(objects, BackupObject{Key: *obj.Key})
+			if obj.Key == nil {
+				continue
 			}
+			ts, ok := ParseBackupTime(jobName, dbName, *obj.Key)
+			if !ok {
+				continue // not a recognizable dbq backup — leave it untouched
+			}
+			objects = append(objects, BackupObject{Key: *obj.Key, Timestamp: ts})
 		}
 	}
 	return objects, nil

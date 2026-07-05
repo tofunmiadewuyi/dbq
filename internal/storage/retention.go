@@ -8,25 +8,30 @@ import (
 	"sort"
 )
 
-// keepLatest returns the subset of keys that should be DELETED to satisfy a
-// "keep the N most recent" retention policy. Keys are expected to embed a
-// lexicographically sortable timestamp (see BackupFilename), so newest sorts
-// last.
+// keepLatest returns the subset of objects that should be DELETED to satisfy a
+// "keep the N most recent" retention policy. Recency is decided by the parsed
+// Timestamp (dbq's dump time), with the Key as a stable tiebreaker for backups
+// sharing a timestamp.
 //
-// It never returns every key: whenever keep >= 1 the newest `keep` keys are
+// It never returns every object: whenever keep >= 1 the newest `keep` are
 // retained, so the most recent backup can never be deleted. A keep of 0 (or
 // negative) means "unlimited" and deletes nothing.
-func keepLatest(keys []string, keep int) []string {
+func keepLatest(objects []BackupObject, keep int) []BackupObject {
 	if keep <= 0 {
 		return nil
 	}
-	if len(keys) <= keep {
+	if len(objects) <= keep {
 		return nil
 	}
 
-	sorted := make([]string, len(keys))
-	copy(sorted, keys)
-	sort.Sort(sort.Reverse(sort.StringSlice(sorted))) // newest first
+	sorted := make([]BackupObject, len(objects))
+	copy(sorted, objects)
+	sort.Slice(sorted, func(i, j int) bool {
+		if !sorted[i].Timestamp.Equal(sorted[j].Timestamp) {
+			return sorted[i].Timestamp.After(sorted[j].Timestamp) // newest first
+		}
+		return sorted[i].Key > sorted[j].Key
+	})
 
 	return sorted[keep:] // tail = oldest = delete
 }
@@ -44,27 +49,22 @@ func PruneCloud(ctx context.Context, client StorageClient, jobName, dbName strin
 		return nil, err
 	}
 
-	keys := make([]string, len(objects))
-	for i, obj := range objects {
-		keys[i] = obj.Key
-	}
-
-	toDelete := keepLatest(keys, keep)
+	toDelete := keepLatest(objects, keep)
 	deleted := make([]string, 0, len(toDelete))
-	for _, key := range toDelete {
-		if err := client.DeleteBackup(ctx, key); err != nil {
-			return deleted, fmt.Errorf("failed to delete %s: %w", key, err)
+	for _, obj := range toDelete {
+		if err := client.DeleteBackup(ctx, obj.Key); err != nil {
+			return deleted, fmt.Errorf("failed to delete %s: %w", obj.Key, err)
 		}
-		deleted = append(deleted, key)
+		deleted = append(deleted, obj.Key)
 	}
 	return deleted, nil
 }
 
 // PruneDirectory enforces a keep-last-N policy on a local directory, deleting
 // the oldest backup files for the given job/db beyond the newest `keep`. Only
-// files matching this job/db's filename prefix are considered, so backups from
-// other jobs sharing the directory are never touched. It returns the paths it
-// deleted. A keep of 0 is a no-op.
+// files carrying this job/db's valid backup name are considered, so backups
+// from other jobs — and any unrelated or tampered files — are never touched. It
+// returns the paths it deleted. A keep of 0 is a no-op.
 func PruneDirectory(dir, jobName, dbName string, keep int) ([]string, error) {
 	if keep <= 0 {
 		return nil, nil
@@ -75,22 +75,25 @@ func PruneDirectory(dir, jobName, dbName string, keep int) ([]string, error) {
 		return nil, fmt.Errorf("failed to read backup directory: %w", err)
 	}
 
-	prefix := BackupFilePrefix(jobName, dbName)
-	var names []string
+	var objects []BackupObject
 	for _, e := range entries {
-		if !e.IsDir() && len(e.Name()) > len(prefix) && e.Name()[:len(prefix)] == prefix {
-			names = append(names, e.Name())
+		if e.IsDir() {
+			continue
 		}
+		ts, ok := ParseBackupTime(jobName, dbName, e.Name())
+		if !ok {
+			continue // not a recognizable dbq backup — leave it untouched
+		}
+		objects = append(objects, BackupObject{Key: filepath.Join(dir, e.Name()), Timestamp: ts})
 	}
 
-	toDelete := keepLatest(names, keep)
+	toDelete := keepLatest(objects, keep)
 	deleted := make([]string, 0, len(toDelete))
-	for _, name := range toDelete {
-		path := filepath.Join(dir, name)
-		if err := os.Remove(path); err != nil {
-			return deleted, fmt.Errorf("failed to delete %s: %w", path, err)
+	for _, obj := range toDelete {
+		if err := os.Remove(obj.Key); err != nil {
+			return deleted, fmt.Errorf("failed to delete %s: %w", obj.Key, err)
 		}
-		deleted = append(deleted, path)
+		deleted = append(deleted, obj.Key)
 	}
 	return deleted, nil
 }
