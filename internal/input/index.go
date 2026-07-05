@@ -49,7 +49,7 @@ func AskValidInt(q string, validate func(string) error, def string) int {
 	i, err := strconv.Atoi(ans)
 	if err != nil {
 		fmt.Println("invalid:", err)
-		AskValidInt(q, validate, def)
+	return AskValidInt(q, validate, def)
 	}
 
 	return i
