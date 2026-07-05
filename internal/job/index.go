@@ -26,6 +26,7 @@ id           = {{printf "%q" .ID}}
 storage_type = {{printf "%q" .StorageType}}
 destination  = {{printf "%q" .Destination}}
 frequency    = {{printf "%q" .Frequency}}
+retention    = {{.Retention}}  # keep N most recent backups; 0 = unlimited
 
 [database]
 name     = {{printf "%q" .Database.Name}}
@@ -53,6 +54,14 @@ secret_key = ""  # stored in system keychain
 `))
 
 
+// retentionLabel renders a retention count for display; 0 means keep everything.
+func retentionLabel(n int) string {
+	if n <= 0 {
+		return "unlimited"
+	}
+	return fmt.Sprintf("keep last %d", n)
+}
+
 func (j *Job) PrintState(title string) {
 	w := 68
 	box := utils.NewDisplayBox(w)
@@ -67,6 +76,7 @@ func (j *Job) PrintState(title string) {
 	row("ID:         ", j.ID)
 	row("Storage:    ", string(j.StorageType))
 	row("Frequency:  ", utils.CronToReadable(j.Frequency))
+	row("Retention:  ", retentionLabel(j.Retention))
 	row("Destination:", j.Destination)
 
 	fmt.Printf("├%s┤\n", border)

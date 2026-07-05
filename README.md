@@ -10,6 +10,7 @@ A CLI tool for scheduling and running PostgreSQL and MySQL backups, with support
 - SSH support — dump a remote database over an SSH connection
 - Server-side mode — dump and upload entirely on the server, bypassing your home internet
 - Schedule backups with systemd timers (Linux) or launchd (macOS)
+- Data retention — automatically prune old backups, keeping the N most recent per job
 - Per-job log files with timing for every run and test
 
 
@@ -48,6 +49,7 @@ dbq start                          Open the interactive job manager
 dbq run <job-id>                   Run a backup job by ID
 dbq logs <job-id> [--lines <N>]   Print log history for a job
 dbq config <job-id>                Print the config file for a job
+dbq prune <job-id>                 Delete old backups now, per the job's retention setting
 dbq delete <job-id>                Delete a job by ID
 dbq upgrade                        Upgrade dbq to the latest release
 dbq version / -v                   Print the current version

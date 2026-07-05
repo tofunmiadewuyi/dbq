@@ -59,6 +59,20 @@ func JobFlow(j *Job) error {
 		return input.ValidateCron("Backup frequency", n)
 	}, j.Frequency)
 
+	// retention
+	fmt.Println("\nHow many backups should be kept? Older ones are deleted after")
+	fmt.Println("each successful run. Enter 0 to keep every backup (unlimited).")
+	retentionDef := "7"
+	if j.Retention > 0 {
+		retentionDef = strconv.Itoa(j.Retention)
+	} else if !isNew {
+		// preserve an explicit "unlimited" choice on edit
+		retentionDef = "0"
+	}
+	j.Retention = input.AskValidInt("Keep how many backups: ", func(n string) error {
+		return input.ValidateNonNegInt("Retention", n)
+	}, retentionDef)
+
 	j.PrintState(title)
 
 	// database

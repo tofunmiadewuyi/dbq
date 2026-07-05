@@ -85,21 +85,45 @@ func printConfig(id string) {
 //
 //	dbq run <job-id>
 func (s *Session) runJob(id string) {
+	j := s.findJob(id)
+	if err := job.CreateBackup(j); err != nil {
+		fmt.Fprintf(os.Stderr, "backup failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// pruneJob applies the job's retention policy immediately, without running a
+// new backup:
+//
+//	dbq prune <job-id>
+func (s *Session) pruneJob(id string) {
+	j := s.findJob(id)
+	if j.Retention <= 0 {
+		fmt.Printf("job %q has no retention limit set — nothing to prune\n", id)
+		return
+	}
+	deleted, err := job.PruneBackups(j)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "prune failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("🧹 Pruned %d old backup(s), keeping latest %d\n", deleted, j.Retention)
+}
+
+// findJob loads the job with the given id or exits with an error.
+func (s *Session) findJob(id string) *job.Job {
 	jobs, err := job.GetJobs(s.sm)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load jobs: %v\n", err)
 		os.Exit(1)
 	}
-	for _, j := range jobs {
-		if j.ID == id {
-			if err := job.CreateBackup(&j); err != nil {
-				fmt.Fprintf(os.Stderr, "backup failed: %v\n", err)
-				os.Exit(1)
-			}
-			return
+	for i := range jobs {
+		if jobs[i].ID == id {
+			return &jobs[i]
 		}
 	}
 	fmt.Fprintf(os.Stderr, "job %q not found\n", id)
 	os.Exit(1)
+	return nil // unreachable
 }
 

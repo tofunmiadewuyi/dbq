@@ -67,6 +67,23 @@ func (r *R2Client) PresignPutURL(ctx context.Context, key string, expiry time.Du
 	return req.URL, nil
 }
 
+// ListBackups lists every backup object stored for the given job/db.
+func (r *R2Client) ListBackups(ctx context.Context, jobName, dbName string) ([]BackupObject, error) {
+	return listBackups(ctx, r.client, r.bucket, jobName, dbName)
+}
+
+// DeleteBackup removes a single backup object from R2 by its full key.
+func (r *R2Client) DeleteBackup(ctx context.Context, key string) error {
+	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete backup from R2: %w", err)
+	}
+	return nil
+}
+
 func (r *R2Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, contentType string, reader io.Reader) (string, error) {
 	key := BackupKey(backupName, dbName, timestamp, ".zip")
 

@@ -31,6 +31,17 @@ func ValidateInt(fieldName, s string) error {
 	return nil
 }
 
+func ValidateNonNegInt(fieldName, s string) error {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("%s must be a number", fieldName)
+	}
+	if n < 0 {
+		return fmt.Errorf("%s cannot be negative", fieldName)
+	}
+	return nil
+}
+
 func ExpandPath(s string) (string, error) {
 	if strings.HasPrefix(s, "~/") {
 		home, err := os.UserHomeDir()

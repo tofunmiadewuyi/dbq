@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,6 +11,31 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+// listBackups is shared by the S3 and R2 clients (both wrap *s3.Client). It
+// paginates every object under the job/db prefix and returns them as
+// BackupObjects.
+func listBackups(ctx context.Context, client *s3.Client, bucket, jobName, dbName string) ([]BackupObject, error) {
+	prefix := BackupPrefix(jobName, dbName)
+	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
+	})
+
+	var objects []BackupObject
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list backups: %w", err)
+		}
+		for _, obj := range page.Contents {
+			if obj.Key != nil {
+				objects = append(objects, BackupObject{Key: *obj.Key})
+			}
+		}
+	}
+	return objects, nil
+}
 
 // S3Client wraps the AWS S3 client with helper methods
 type S3Client struct {
@@ -150,34 +174,7 @@ func (s *S3Client) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// ListArchiveFolders lists all unique archive folder prefixes in S3
-func (s *S3Client) ListArchiveFolders(ctx context.Context) (map[string]bool, error) {
-	archiveFolders := make(map[string]bool)
-
-	// List objects with "backups/" prefix using delimiter to get "folders"
-	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
-		Bucket:    aws.String(s.bucket),
-		Prefix:    aws.String("backups/"),
-		Delimiter: aws.String("/"),
-	})
-
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list S3 objects: %w", err)
-		}
-
-		// each prefix is a "folder" under backups/ — extract the timestamp segment
-		for _, prefix := range page.CommonPrefixes {
-			if prefix.Prefix != nil && len(*prefix.Prefix) > 8 {
-				timestamp := (*prefix.Prefix)[8:]
-				timestamp = strings.TrimSuffix(timestamp, "/")
-				if timestamp != "" {
-					archiveFolders[timestamp] = true
-				}
-			}
-		}
-	}
-
-	return archiveFolders, nil
+// ListBackups lists every backup object stored for the given job/db.
+func (s *S3Client) ListBackups(ctx context.Context, jobName, dbName string) ([]BackupObject, error) {
+	return listBackups(ctx, s.client, s.bucket, jobName, dbName)
 }

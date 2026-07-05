@@ -26,6 +26,16 @@ func CreateBackup(j *Job) error {
 		return err
 	}
 
+	// Prune old backups only after a successful run, so a failed backup never
+	// triggers deletion of existing copies. A cleanup failure is non-fatal —
+	// the backup itself succeeded — so it's logged rather than returned.
+	if deleted, pruneErr := PruneBackups(j); pruneErr != nil {
+		fmt.Printf("⚠️  Backup ok, but retention cleanup failed: %v\n", pruneErr)
+		AppendLog(j.ID, "prune", 0, pruneErr)
+	} else if deleted > 0 {
+		fmt.Printf("🧹 Pruned %d old backup(s), keeping latest %d\n", deleted, j.Retention)
+	}
+
 	fmt.Printf("✅ Backup completed in %s\n", d)
 	return nil
 }

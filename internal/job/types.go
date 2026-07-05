@@ -32,6 +32,7 @@ type Job struct {
 	StorageType storage.StorageType  `toml:"storage_type"`
 	Destination string       `toml:"destination"` // path if directory
 	Frequency   string       `toml:"frequency"`
+	Retention   int          `toml:"retention"` // keep N most recent backups; 0 = unlimited
 	Database    DB           `toml:"database"`
 	Storage     storage.CloudStorage `toml:"storage"`
 	sm          secrets.Manager
