@@ -26,8 +26,10 @@ macOS and Linux only. Windows is not currently supported.
 
 ## Installation
 ```bash
-curl -sL https://raw.githubusercontent.com/tofunmiadewuyi/dbq/main/install.sh | bash
+curl -fsSL https://dbq.tofunmiadewuyi.com/install.sh | bash
 ```
+Pin a version with `DBQ_VERSION=v1.2.3`, or point at another artifact host with `DBQ_RELEASE_BASE`. `dbq upgrade` reads from the same release base.
+
 or if you prefer to compile yourself:
 
 ```bash

@@ -3,7 +3,6 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 var version = "dev"
@@ -40,37 +40,53 @@ func replaceBinary(src, dest string) error {
 	return os.Rename(tmp, dest)
 }
 
-type Release struct {
-	TagName string `json:"tag_name"`
+const defaultReleaseBase = "https://dbq.tofunmiadewuyi.com/releases/dbq"
+
+// releaseBase is where artifacts live; DBQ_RELEASE_BASE overrides the default.
+func releaseBase() string {
+	base := os.Getenv("DBQ_RELEASE_BASE")
+	if base == "" {
+		base = defaultReleaseBase
+	}
+	return strings.TrimRight(base, "/")
+}
+
+// latestVersion reads the newest tag from the release base's latest.txt.
+func latestVersion(base string) (string, error) {
+	resp, err := http.Get(base + "/latest.txt")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d fetching latest.txt", resp.StatusCode)
+	}
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 func upgrade() {
-	repo := "tofunmiadewuyi/dbq"
+	base := releaseBase()
 
-	// Get latest release
-	resp, err := http.Get("https://api.github.com/repos/" + repo + "/releases/latest")
+	latest, err := latestVersion(base)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "upgrade failed: %v\n", err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
-
-	var rel Release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		fmt.Println("Upgrade failed: could not parse release info:", err)
-		return
-	}
-	if rel.TagName == "" {
-		fmt.Println("Upgrade failed: no release found (check https://github.com/" + repo + "/releases)")
+	if latest == "" {
+		fmt.Println("Upgrade failed: no release found at", base)
 		return
 	}
 
-	if rel.TagName == version {
+	if latest == version {
 		fmt.Println("Already up to date.")
 		return
 	}
 
-	fmt.Printf("Update available: %s (current: %s)\n", rel.TagName, version)
+	fmt.Printf("Update available: %s (current: %s)\n", latest, version)
 	fmt.Print("Continue? (y/n): ")
 
 	var input string
@@ -81,13 +97,13 @@ func upgrade() {
 		return
 	}
 
-	fmt.Println("Upgrading to", rel.TagName)
+	fmt.Println("Upgrading to", latest)
 
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
-	filename := fmt.Sprintf("dbq_%s_%s_%s.tar.gz", rel.TagName, osName, arch)
-	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repo, rel.TagName, filename)
+	filename := fmt.Sprintf("dbq_%s_%s_%s.tar.gz", latest, osName, arch)
+	url := fmt.Sprintf("%s/%s/%s", base, latest, filename)
 
 	tmpFile := "/tmp/dbq.tar.gz"
 
@@ -98,7 +114,7 @@ func upgrade() {
 	}
 	defer out.Close()
 
-	resp, err = http.Get(url)
+	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println("Upgrade failed: download error:", err)
 		return

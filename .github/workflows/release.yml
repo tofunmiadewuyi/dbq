@@ -11,35 +11,63 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
-
+    environment: prod
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
 
       - name: Build + package
+        env:
+          DBQ_RELEASE_BASE: ${{ vars.DBQ_RELEASE_BASE }}
         run: |
           mkdir -p dist
+          VERSION=${GITHUB_REF_NAME} # v1.2.3
+          RELEASE_BASE="${DBQ_RELEASE_BASE:-https://dbq.tofunmiadewuyi.com/releases/dbq}"
 
-          VERSION=${GITHUB_REF_NAME}
-
+          # dbq is a client CLI; build for the machines people run it on.
           for GOOS in linux darwin; do
             for GOARCH in amd64 arm64; do
-              NAME="dbq_${VERSION}_${GOOS}_${GOARCH}"
-              OUT="dist/$NAME"
-
+              OUT="dist/dbq"
               GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-s -w -X main.version=$VERSION" -o "$OUT" ./cmd
-
-              cp "$OUT" dist/dbq
-              tar -czf "$OUT.tar.gz" -C dist "dbq"
-              rm dist/dbq "$OUT"
+                go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "$OUT" ./cmd
+              tar -czf "dist/dbq_${VERSION}_${GOOS}_${GOARCH}.tar.gz" -C dist dbq
+              rm "$OUT"
             done
           done
+
+          ( cd dist && sha256sum *.tar.gz > dbq_${VERSION}_checksums.txt )
+          printf "%s\n" "$VERSION" > dist/latest.txt
+          sed "s|^DEFAULT_RELEASE_BASE=.*|DEFAULT_RELEASE_BASE=\"$RELEASE_BASE\"|" install.sh > dist/install.sh
+          mkdir -p "dist/site/releases/dbq/$VERSION"
+          cp "dist/dbq_${VERSION}_"*.tar.gz "dist/dbq_${VERSION}_checksums.txt" "dist/site/releases/dbq/$VERSION/"
+          cp dist/latest.txt dist/site/releases/dbq/latest.txt
+          cp dist/install.sh dist/site/install.sh
+          tar -czf "dist/dbq_site_${VERSION}.tar.gz" -C dist/site .
 
       - name: Create Release + Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*.tar.gz
+            dist/*.txt
+            dist/install.sh
+
+      - name: Publish installer site to R2
+        if: ${{ vars.DBQ_R2_BUCKET != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          DBQ_R2_BUCKET: ${{ vars.DBQ_R2_BUCKET }}
+        run: |
+          : "${AWS_ACCESS_KEY_ID:?missing CLOUDFLARE_R2_ACCESS_KEY_ID secret}"
+          : "${AWS_SECRET_ACCESS_KEY:?missing CLOUDFLARE_R2_SECRET_ACCESS_KEY secret}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?missing CLOUDFLARE_ACCOUNT_ID variable}"
+          : "${DBQ_R2_BUCKET:?missing DBQ_R2_BUCKET variable}"
+
+          aws s3 sync dist/site/ "s3://${DBQ_R2_BUCKET}/" \
+            --endpoint-url "https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
