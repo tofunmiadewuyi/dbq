@@ -51,16 +51,22 @@ func (s *Session) printLogs(id string, lines int) {
 
 func (s *Session) deleteJob(id string) {
 	path := filepath.Join(job.JobsDir(), id+".toml")
-	if err := os.Remove(path); err != nil {
+	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "no job found with id %q\n", id)
 		} else {
-			fmt.Fprintf(os.Stderr, "could not delete job: %v\n", err)
+			fmt.Fprintf(os.Stderr, "could not read job: %v\n", err)
 		}
 		os.Exit(1)
 	}
-	if err := s.sm.Delete(id); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not remove secrets from keychain: %v\n", err)
+	// Secrets go first: once the config is gone there is no way back to them.
+	if err := s.sm.DeleteAll(id); err != nil {
+		fmt.Fprintf(os.Stderr, "could not remove secrets, job left intact: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.Remove(path); err != nil {
+		fmt.Fprintf(os.Stderr, "could not delete job: %v\n", err)
+		os.Exit(1)
 	}
 	fmt.Printf("job %q deleted\n", id)
 }

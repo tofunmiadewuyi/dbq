@@ -83,13 +83,15 @@ jobList:
 				}
 
 			case "Delete":
+				// Secrets go first: once the config is gone there is no way back to them.
+				if err := j.DeleteSecrets(); err != nil {
+					fmt.Printf("error: could not remove secrets, job left intact: %v\n", err)
+					break
+				}
 				path := filepath.Join(JobsDir(), j.ID+".toml")
 				if err := os.Remove(path); err != nil {
 					fmt.Println("error deleting job:", err)
 				} else {
-					if err := j.DeleteSecrets(); err != nil {
-						fmt.Printf("warning: could not remove secrets from keychain: %v\n", err)
-					}
 					fmt.Printf("✅ Job %q deleted\n", j.Name)
 					updated, err := GetJobs(sm)
 					if err != nil {

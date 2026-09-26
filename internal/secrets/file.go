@@ -75,12 +75,22 @@ func (m *fileManager) Get(jobID, key string) (string, error) {
 	return v, nil
 }
 
-func (m *fileManager) Delete(jobID string) error {
+func (m *fileManager) Delete(jobID, key string) error {
 	store, err := m.load()
 	if err != nil {
 		return err
 	}
-	for _, k := range []string{KeyDBPassword, KeyStorageAKID, KeyStorageSAK} {
+	delete(store, jobID+"/"+key)
+	return m.save(store)
+}
+
+// DeleteAll removes every known secret for the job in a single write.
+func (m *fileManager) DeleteAll(jobID string) error {
+	store, err := m.load()
+	if err != nil {
+		return err
+	}
+	for _, k := range allKeys {
 		delete(store, jobID+"/"+k)
 	}
 	return m.save(store)

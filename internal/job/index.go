@@ -134,7 +134,7 @@ func (j *Job) ReaderSSH() *reader.SSHConn {
 }
 
 func (j *Job) DeleteSecrets() error {
-	return j.sm.Delete(j.ID)
+	return j.sm.DeleteAll(j.ID)
 }
 
 func (j *Job) WriteJob() error {
