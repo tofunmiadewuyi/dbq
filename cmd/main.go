@@ -2,10 +2,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 
+	"github.com/tofunmiadewuyi/dbq/internal/agent"
+	"github.com/tofunmiadewuyi/dbq/internal/engine"
 	"github.com/tofunmiadewuyi/dbq/internal/secrets"
 )
 
@@ -30,6 +33,13 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "agent":
+		if len(os.Args) != 2 {
+			fmt.Fprintln(os.Stderr, "Usage: dbq agent")
+			os.Exit(2)
+		}
+		os.Exit(agent.Run(context.Background(), os.Stdin, os.Stdout, os.Stderr, os.Getenv, engine.New()))
+
 	case "start":
 		newSession().startCLI()
 
@@ -82,6 +92,7 @@ func main() {
 		fmt.Println("Usage: dbq <command>")
 		fmt.Println()
 		fmt.Println("Commands:")
+		fmt.Println("  agent           Execute one JSON request from stdin and write one JSON result")
 		fmt.Println("  start            Open the interactive job manager")
 		fmt.Println("  run <job-id>     Run a backup job by ID")
 		fmt.Println("  logs <job-id> [--lines <N>]    Print the log history for a job (last N entries)")
