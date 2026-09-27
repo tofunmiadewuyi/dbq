@@ -10,7 +10,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-
 // dirEntry wraps fs.FileInfo to implement fs.DirEntry
 type dirEntry struct {
 	info fs.FileInfo
@@ -169,13 +168,40 @@ func (p *SSHConnectionPool) ExecStream(cmd string, dst io.Writer) error {
 	return conn.ExecStream(cmd, dst)
 }
 
+func (p *SSHConnectionPool) CreateCredentialFile(prefix, contents string) (string, error) {
+	conn, err := p.get()
+	if err != nil {
+		return "", err
+	}
+	defer p.put(conn)
+	return conn.CreateCredentialFile(prefix, contents)
+}
+
+func (p *SSHConnectionPool) RemoveCredentialFile(path string) error {
+	conn, err := p.get()
+	if err != nil {
+		return err
+	}
+	defer p.put(conn)
+	return conn.RemoveCredentialFile(path)
+}
+
+func (p *SSHConnectionPool) ExecRemoteCommand(name string, args, env []string, dst io.Writer) error {
+	conn, err := p.get()
+	if err != nil {
+		return err
+	}
+	defer p.put(conn)
+	return conn.ExecRemoteCommand(name, args, env, dst)
+}
+
 func (p *SSHConnectionPool) Exec(cmd string) ([]byte, error) {
-    conn, err := p.get()
-    if err != nil {
-        return nil, err
-    }
-    defer p.put(conn)
-    return conn.Exec(cmd)
+	conn, err := p.get()
+	if err != nil {
+		return nil, err
+	}
+	defer p.put(conn)
+	return conn.Exec(cmd)
 }
 
 func (p *SSHConnectionPool) Close() error {

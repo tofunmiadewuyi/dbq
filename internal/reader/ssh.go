@@ -2,10 +2,14 @@ package reader
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -152,6 +156,100 @@ func (s *SSHFileReader) ExecStream(cmd string, dst io.Writer) error {
 	return nil
 }
 
+func (s *SSHFileReader) CreateCredentialFile(prefix, contents string) (string, error) {
+	if s.sftpClient == nil {
+		return "", errors.New("secure remote credential files require SFTP")
+	}
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	remotePath := path.Join("/tmp", prefix+hex.EncodeToString(random))
+	f, err := s.sftpClient.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		return "", err
+	}
+	cleanup := func() { _ = s.sftpClient.Remove(remotePath) }
+	// Tighten permissions while the file is still empty, before writing any
+	// credential material. SFTP file creation otherwise uses server defaults.
+	if err := s.sftpClient.Chmod(remotePath, 0o600); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", err
+	}
+	if _, err := io.WriteString(f, contents); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", err
+	}
+	return remotePath, nil
+}
+
+func (s *SSHFileReader) RemoveCredentialFile(remotePath string) error {
+	if s.sftpClient == nil {
+		return errors.New("secure remote credential files require SFTP")
+	}
+	err := s.sftpClient.Remove(remotePath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+func (s *SSHFileReader) ExecRemoteCommand(name string, args, env []string, dst io.Writer) error {
+	command, err := remoteCommand(name, args, env)
+	if err != nil {
+		return err
+	}
+	return s.ExecStream(command, dst)
+}
+
+func remoteCommand(name string, args, env []string) (string, error) {
+	var command strings.Builder
+	for _, entry := range env {
+		key, value, hasValue := strings.Cut(entry, "=")
+		if !validEnvName(key) {
+			return "", fmt.Errorf("invalid environment name %q", key)
+		}
+		if hasValue {
+			fmt.Fprintf(&command, "%s=%s ", key, posixQuote(value))
+		} else {
+			fmt.Fprintf(&command, "unset %s; ", key)
+		}
+	}
+	command.WriteString("exec ")
+	command.WriteString(posixQuote(name))
+	for _, arg := range args {
+		command.WriteByte(' ')
+		command.WriteString(posixQuote(arg))
+	}
+	return command.String(), nil
+}
+
+func validEnvName(name string) bool {
+	if name == "" || !isEnvStart(name[0]) {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if !isEnvStart(name[i]) && (name[i] < '0' || name[i] > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func isEnvStart(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+func posixQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
 func (s *SSHFileReader) Exec(cmd string) ([]byte, error) {
 	session, err := s.sshClient.NewSession()
 	if err != nil {
@@ -233,5 +331,3 @@ func (s *SSHFileReader) Close() error {
 	}
 	return nil
 }
-
-

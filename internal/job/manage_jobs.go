@@ -10,8 +10,7 @@ import (
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
-
-func ManageJobs(sm secrets.Manager, jobs []Job) error {
+func ManageJobs(provider secrets.Provider, jobs []Job) error {
 	// Job selection loop — "< Back" here returns to the main menu.
 jobList:
 	for {
@@ -66,8 +65,8 @@ jobList:
 
 			case "Schedule":
 				if err := scheduler.Install(&scheduler.SchedulerJob{
-					Name: j.Name,
-					ID: j.ID,
+					Name:      j.Name,
+					ID:        j.ID,
 					Frequency: j.Frequency,
 				}); err != nil {
 					fmt.Println("error:", err)
@@ -93,7 +92,7 @@ jobList:
 					fmt.Println("error deleting job:", err)
 				} else {
 					fmt.Printf("✅ Job %q deleted\n", j.Name)
-					updated, err := GetJobs(sm)
+					updated, err := GetJobs(provider)
 					if err != nil {
 						return err
 					}

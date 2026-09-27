@@ -10,7 +10,16 @@ import (
 )
 
 type Session struct {
-	sm secrets.Manager
+	secrets secrets.Provider
+}
+
+func newSession() *Session {
+	provider, err := secrets.New()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not initialize secure secret storage: %v\n", err)
+		os.Exit(1)
+	}
+	return &Session{secrets: provider}
 }
 
 func main() {
@@ -20,20 +29,16 @@ func main() {
 		return
 	}
 
-	session := &Session{
-		sm: secrets.New(),
-	}
-
 	switch os.Args[1] {
 	case "start":
-		session.startCLI()
+		newSession().startCLI()
 
 	case "run":
 		if len(os.Args) != 3 {
 			fmt.Println("Usage: dbq run <job>")
 			return
 		}
-		session.runJob(os.Args[2])
+		newSession().runJob(os.Args[2])
 
 	case "logs":
 		id, lines, ok := parseLogsArgs(os.Args[2:])
@@ -41,14 +46,14 @@ func main() {
 			fmt.Println("Usage: dbq logs <job-id> [--lines <N>]")
 			return
 		}
-		session.printLogs(id, lines)
+		(&Session{}).printLogs(id, lines)
 
 	case "delete":
 		if len(os.Args) != 3 {
 			fmt.Println("Usage: dbq delete <job-id>")
 			return
 		}
-		session.deleteJob(os.Args[2])
+		newSession().deleteJob(os.Args[2])
 
 	case "config":
 		if len(os.Args) != 3 {
@@ -62,7 +67,7 @@ func main() {
 			fmt.Println("Usage: dbq prune <job-id>")
 			return
 		}
-		session.pruneJob(os.Args[2])
+		newSession().pruneJob(os.Args[2])
 
 	case "upgrade":
 		upgrade()
@@ -84,7 +89,7 @@ func main() {
 		fmt.Println("  prune <job-id>   Delete old backups now, per the job's retention setting")
 		fmt.Println("  delete <job-id>  Delete a job by ID")
 		fmt.Println("  upgrade          Upgrade dbq to the latest release")
-	fmt.Println("  uninstall        Remove the dbq binary")
+		fmt.Println("  uninstall        Remove the dbq binary")
 		fmt.Println("  version          Print the current version")
 		fmt.Println("  help             Show this help message")
 

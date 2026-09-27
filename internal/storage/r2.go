@@ -18,16 +18,16 @@ type R2Client struct {
 	bucket string
 }
 
-func NewR2Client(cfg *CloudStorage) (*R2Client, error) {
-	if cfg.Endpoint == "" || cfg.AKID == "" || cfg.SAK == "" || cfg.Bucket == "" {
+func NewR2Client(cfg *CloudStorage, creds Credentials) (*R2Client, error) {
+	if cfg.Endpoint == "" || creds.AccessKey == "" || creds.SecretKey == "" || cfg.Bucket == "" {
 		return nil, fmt.Errorf("missing required R2 configuration (endpoint, access_key, secret_key, bucket)")
 	}
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion("auto"),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			cfg.AKID,
-			cfg.SAK,
+			creds.AccessKey,
+			creds.SecretKey,
 			"",
 		)),
 	)
@@ -84,8 +84,8 @@ func (r *R2Client) DeleteBackup(ctx context.Context, key string) error {
 	return nil
 }
 
-func (r *R2Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, contentType string, reader io.Reader) (string, error) {
-	key := BackupKey(backupName, dbName, timestamp, ".zip")
+func (r *R2Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, extension, contentType string, reader io.Reader) (string, error) {
+	key := BackupKey(backupName, dbName, timestamp, extension)
 
 	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(r.bucket),

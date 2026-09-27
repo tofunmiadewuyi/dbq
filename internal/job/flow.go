@@ -13,8 +13,8 @@ import (
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
-func StartNewJob() error {
-	return JobFlow(&Job{sm: secrets.New()})
+func StartNewJob(provider secrets.Provider) error {
+	return JobFlow(&Job{provider: provider})
 }
 
 func EditJob(j *Job) error {
@@ -98,9 +98,9 @@ func JobFlow(j *Job) error {
 		return input.ValidateField("Database username", n)
 	}, db.Username)
 
-	db.Password = input.AskValid("Database password: ", func(n string) error {
+	j.Secrets.DatabasePassword = input.AskValid("Database password: ", func(n string) error {
 		return input.ValidateField("Database password", n)
-	}, db.Password)
+	}, j.Secrets.DatabasePassword)
 
 	j.PrintState(title)
 
@@ -148,6 +148,8 @@ func JobFlow(j *Job) error {
 	if storage.StorageType(storageTypeAnswer) == storage.TypeDirectory {
 		j.StorageType = storage.TypeDirectory
 		j.Storage = storage.CloudStorage{}
+		j.Secrets.StorageAccessKey = ""
+		j.Secrets.StorageSecretKey = ""
 		j.Destination = input.AskValid("Path to directory: ", func(n string) error {
 			return input.ValidateField("Destination path", n)
 		}, j.Destination)
@@ -171,12 +173,12 @@ func JobFlow(j *Job) error {
 			}, cloud.Endpoint)
 		}
 
-		cloud.AKID = input.AskValid("Access Key ID: ", func(n string) error {
+		j.Secrets.StorageAccessKey = input.AskValid("Access Key ID: ", func(n string) error {
 			return input.ValidateField("AKID", n)
-		}, cloud.AKID)
-		cloud.SAK = input.AskValid("Secret Access Key: ", func(n string) error {
+		}, j.Secrets.StorageAccessKey)
+		j.Secrets.StorageSecretKey = input.AskValid("Secret Access Key: ", func(n string) error {
 			return input.ValidateField("SAK", n)
-		}, cloud.SAK)
+		}, j.Secrets.StorageSecretKey)
 		cloud.Bucket = input.AskValid("Bucket name: ", func(n string) error {
 			return input.ValidateField("Bucket name", n)
 		}, cloud.Bucket)
@@ -206,7 +208,7 @@ func JobFlow(j *Job) error {
 // backupAlreadyExists returns the first existing job that targets the same database,
 // identified by type + host + name.
 func backupAlreadyExists(j *Job) *Job {
-	existing, err := GetJobs(j.sm)
+	existing, err := GetJobs(j.provider)
 	if err != nil {
 		return nil
 	}

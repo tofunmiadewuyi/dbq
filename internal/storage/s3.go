@@ -50,8 +50,8 @@ type S3Client struct {
 }
 
 // NewS3Client creates a new S3 client
-func NewS3Client(cfg *CloudStorage) (*S3Client, error) {
-	if cfg.Region == "" || cfg.AKID == "" || cfg.SAK == "" || cfg.Bucket == "" {
+func NewS3Client(cfg *CloudStorage, creds Credentials) (*S3Client, error) {
+	if cfg.Region == "" || creds.AccessKey == "" || creds.SecretKey == "" || cfg.Bucket == "" {
 		return nil, fmt.Errorf("missing required AWS configuration")
 	}
 
@@ -59,8 +59,8 @@ func NewS3Client(cfg *CloudStorage) (*S3Client, error) {
 	awsCfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion(cfg.Region),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			cfg.AKID,
-			cfg.SAK,
+			creds.AccessKey,
+			creds.SecretKey,
 			"",
 		)),
 	)
@@ -70,7 +70,6 @@ func NewS3Client(cfg *CloudStorage) (*S3Client, error) {
 
 	client := s3.NewFromConfig(awsCfg)
 
-	fmt.Println("✓ S3 client initialized")
 	return &S3Client{
 		client: client,
 		bucket: cfg.Bucket,
@@ -84,8 +83,8 @@ func NewS3Client(cfg *CloudStorage) (*S3Client, error) {
 // contentType: MIME type
 // reader: attachment file content
 // Returns the S3 key for the uploaded file
-func (s *S3Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName string, dbName string, contentType string, reader io.Reader) (string, error) {
-	key := BackupKey(backupName, dbName, timestamp, ".zip")
+func (s *S3Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName string, dbName string, extension string, contentType string, reader io.Reader) (string, error) {
+	key := BackupKey(backupName, dbName, timestamp, extension)
 
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
@@ -99,7 +98,6 @@ func (s *S3Client) UploadBackup(ctx context.Context, timestamp time.Time, backup
 
 	return key, nil
 }
-
 
 // DownloadBackup downloads a backup file from S3
 func (s *S3Client) DownloadBackup(ctx context.Context, s3Key string) ([]byte, error) {
@@ -153,7 +151,6 @@ func (s *S3Client) GetPresignedURL(ctx context.Context, s3Key string, expiration
 	return request.URL, nil
 }
 
-
 // DeleteBackup deletes an attachment file from S3
 func (s *S3Client) DeleteBackup(ctx context.Context, s3Key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -176,7 +173,6 @@ func (s *S3Client) TestConnection(ctx context.Context) error {
 		return fmt.Errorf("failed to access S3 bucket: %w", err)
 	}
 
-	fmt.Printf("✓ Successfully connected to S3 bucket: %s\n", s.bucket)
 	return nil
 }
 

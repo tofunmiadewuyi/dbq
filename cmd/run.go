@@ -60,7 +60,7 @@ func (s *Session) deleteJob(id string) {
 		os.Exit(1)
 	}
 	// Secrets go first: once the config is gone there is no way back to them.
-	if err := s.sm.DeleteAll(id); err != nil {
+	if err := s.secrets.Delete(id); err != nil {
 		fmt.Fprintf(os.Stderr, "could not remove secrets, job left intact: %v\n", err)
 		os.Exit(1)
 	}
@@ -118,7 +118,7 @@ func (s *Session) pruneJob(id string) {
 
 // findJob loads the job with the given id or exits with an error.
 func (s *Session) findJob(id string) *job.Job {
-	jobs, err := job.GetJobs(s.sm)
+	jobs, err := job.GetJobs(s.secrets)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load jobs: %v\n", err)
 		os.Exit(1)
@@ -132,4 +132,3 @@ func (s *Session) findJob(id string) *job.Job {
 	os.Exit(1)
 	return nil // unreachable
 }
-

@@ -8,9 +8,8 @@ import (
 	"strconv"
 	"text/template"
 
+	"github.com/tofunmiadewuyi/dbq/internal/engine"
 	"github.com/tofunmiadewuyi/dbq/internal/reader"
-	"github.com/tofunmiadewuyi/dbq/internal/secrets"
-	"github.com/tofunmiadewuyi/dbq/internal/source"
 	"github.com/tofunmiadewuyi/dbq/internal/storage"
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
@@ -18,8 +17,7 @@ import (
 var jobTemplate = template.Must(template.New("job").Parse(`# dbq job configuration
 # Safe to edit: name, frequency, destination, and all database/storage connection fields.
 # Do not edit: id — the scheduler uses this to identify the job.
-# Credentials (password, access_key, secret_key) are stored in the system keychain.
-# The empty strings below are intentional — editing them here has no effect.
+# Credentials are stored separately in the system keychain and never appear in this file.
 
 name         = {{printf "%q" .Name}}
 id           = {{printf "%q" .ID}}
@@ -34,7 +32,6 @@ type     = {{printf "%q" .Database.Type}}
 host     = {{printf "%q" .Database.Host}}
 port     = {{printf "%q" .Database.Port}}
 username = {{printf "%q" .Database.Username}}
-password = ""  # stored in system keychain
 
 [database.ssh]
 required  = {{.Database.SSH.Required}}
@@ -49,10 +46,7 @@ provider   = {{printf "%q" .Storage.Provider}}
 bucket     = {{printf "%q" .Storage.Bucket}}
 region     = {{printf "%q" .Storage.Region}}
 endpoint   = {{printf "%q" .Storage.Endpoint}}
-access_key = ""  # stored in system keychain
-secret_key = ""  # stored in system keychain
 `))
-
 
 // retentionLabel renders a retention count for display; 0 means keep everything.
 func retentionLabel(n int) string {
@@ -111,41 +105,41 @@ func (j *Job) PrintState(title string) {
 	fmt.Printf("└%s┘\n\n", border)
 }
 
-func (j *Job) SourceJob() *source.SourceJob {
-	return &source.SourceJob{
-		ID:       j.ID,
-		Name:     j.Database.Name,
-		Host:     j.Database.Host,
-		Port:     j.Database.Port,
-		Username: j.Database.Username,
-		Password: j.Database.Password,
-	}
-}
-
-func (j *Job) ReaderSSH() *reader.SSHConn {
-	return &reader.SSHConn{
-		Required:  j.Database.SSH.Required,
-		Port:      j.Database.SSH.Port,
-		Host:      j.Database.SSH.Host,
-		Key:       j.Database.SSH.Key,
-		User:      j.Database.SSH.User,
-		UseServer: j.Database.SSH.UseServer,
+func (j *Job) EngineRequest() engine.Request {
+	return engine.Request{
+		ID:   j.ID,
+		Name: j.Name,
+		Database: engine.Database{
+			Type:     j.Database.Type,
+			Name:     j.Database.Name,
+			Host:     j.Database.Host,
+			Port:     j.Database.Port,
+			Username: j.Database.Username,
+		},
+		SSH: reader.SSHConn{
+			Required:  j.Database.SSH.Required,
+			Port:      j.Database.SSH.Port,
+			Host:      j.Database.SSH.Host,
+			Key:       j.Database.SSH.Key,
+			User:      j.Database.SSH.User,
+			UseServer: j.Database.SSH.UseServer,
+		},
+		StorageType:  j.StorageType,
+		Destination:  j.Destination,
+		CloudStorage: j.Storage,
+		Retention:    j.Retention,
+		Secrets:      j.Secrets,
 	}
 }
 
 func (j *Job) DeleteSecrets() error {
-	return j.sm.DeleteAll(j.ID)
+	return j.provider.Delete(j.ID)
 }
 
 func (j *Job) WriteJob() error {
-	if err := storeJobSecrets(j); err != nil {
+	if err := j.provider.Save(j.ID, j.Secrets); err != nil {
 		return err
 	}
-
-	safe := *j
-	safe.Database.Password = ""
-	safe.Storage.AKID = ""
-	safe.Storage.SAK = ""
 
 	dir := JobsDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -159,24 +153,5 @@ func (j *Job) WriteJob() error {
 	}
 	defer f.Close()
 
-	return jobTemplate.Execute(f, safe)
-}
-
-func storeJobSecrets(j *Job) error {
-	if j.Database.Password != "" {
-		if err := j.sm.Set(j.ID, secrets.KeyDBPassword, j.Database.Password); err != nil {
-			return fmt.Errorf("failed to store db password: %w", err)
-		}
-	}
-	if j.Storage.AKID != "" {
-		if err := j.sm.Set(j.ID, secrets.KeyStorageAKID, j.Storage.AKID); err != nil {
-			return fmt.Errorf("failed to store storage akid: %w", err)
-		}
-	}
-	if j.Storage.SAK != "" {
-		if err := j.sm.Set(j.ID, secrets.KeyStorageSAK, j.Storage.SAK); err != nil {
-			return fmt.Errorf("failed to store storage sak: %w", err)
-		}
-	}
-	return nil
+	return jobTemplate.Execute(f, j)
 }

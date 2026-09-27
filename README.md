@@ -79,6 +79,9 @@ Runs the backup for the given job ID non-interactively. This is what the generat
 ## Job configuration
 
 Jobs are stored as TOML files in `~/.config/dbq/jobs/` (or `/etc/dbq/jobs/` when running as root). You can create and edit them through the interactive UI.
+Credentials are stored separately in the operating-system keyring and never
+written to job TOML files. dbq does not fall back to plaintext storage when the
+keyring is unavailable.
 
 ### Example — local PostgreSQL database, upload to S3
 
@@ -94,14 +97,11 @@ frequency = "0 2 * * *"
   host = "localhost"
   port = "5432"
   username = "postgres"
-  password = "secret"
 
 [storage]
   provider = "AWS (S3)"
   bucket = "my-backups"
   region = "eu-west-1"
-  access_key = "AKIAIOSFODNN7EXAMPLE"
-  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 ```
 
 ### Example — local MySQL database, save to directory
@@ -119,7 +119,6 @@ frequency = "0 3 * * *"
   host = "localhost"
   port = "3306"
   username = "root"
-  password = "secret"
 ```
 
 ### Example — remote database over SSH, upload to R2
@@ -136,7 +135,6 @@ frequency = "0 3 * * *"
   host = "localhost"
   port = "5432"
   username = "archive"
-  password = "secret"
 
   [database.ssh]
     required = true
@@ -150,8 +148,6 @@ frequency = "0 3 * * *"
   provider = "Cloudflare R2"
   bucket = "my-backups"
   endpoint = "https://<account-id>.r2.cloudflarestorage.com"
-  access_key = "..."
-  secret_key = "..."
 ```
 
 ### `useserver` mode

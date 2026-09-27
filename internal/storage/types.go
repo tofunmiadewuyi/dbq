@@ -15,10 +15,6 @@ const (
 )
 
 type CloudStorage struct {
-	// Access Key ID
-	AKID string `toml:"access_key"`
-	// Secret access key
-	SAK string `toml:"secret_key"`
 	// Storage Url
 	Endpoint string `toml:"endpoint"`
 	// Bucket name
@@ -27,4 +23,11 @@ type CloudStorage struct {
 	Region string `toml:"region"`
 	// Provider
 	Provider Provider `toml:"provider"`
+}
+
+// Credentials contains cloud authentication material. It is passed at runtime
+// and is never part of the persisted storage configuration.
+type Credentials struct {
+	AccessKey string
+	SecretKey string
 }

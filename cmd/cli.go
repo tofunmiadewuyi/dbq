@@ -15,7 +15,7 @@ func (s *Session) startCLI() {
 	cleanStaleTempFiles()
 
 	for {
-		jobs, err := job.GetJobs(s.sm)
+		jobs, err := job.GetJobs(s.secrets)
 		if err != nil && !os.IsNotExist(err) {
 			fmt.Println("error reading jobs:", err)
 			os.Exit(1)
@@ -25,12 +25,12 @@ func (s *Session) startCLI() {
 		if len(jobs) > 0 {
 			menuOptions = append(menuOptions, input.Option{
 				Label:  fmt.Sprintf("Manage Jobs (%d)", len(jobs)),
-				Action: func() error { return job.ManageJobs(s.sm, jobs) },
+				Action: func() error { return job.ManageJobs(s.secrets, jobs) },
 			})
 		}
 		menuOptions = append(menuOptions, input.Option{
 			Label:  "New Job...",
-			Action: job.StartNewJob,
+			Action: func() error { return job.StartNewJob(s.secrets) },
 		})
 		menuOptions = append(menuOptions, input.Option{
 			Label:  "Exit",
@@ -66,4 +66,3 @@ func (s *Session) startCLI() {
 	}
 
 }
-

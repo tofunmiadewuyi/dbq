@@ -76,7 +76,7 @@ type BackupObject struct {
 
 // StorageClient is the shared interface every storage backend must satisfy.
 type StorageClient interface {
-	UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, contentType string, r io.Reader) (string, error)
+	UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, extension, contentType string, r io.Reader) (string, error)
 	TestConnection(ctx context.Context) error
 	// PresignPutURL returns a short-lived presigned HTTP PUT URL for the given key.
 	// the server can use this to upload directly without needing cloud credentials.
@@ -88,12 +88,12 @@ type StorageClient interface {
 }
 
 // NewStorageClient returns the correct StorageClient for the job's configured provider.
-func NewStorageClient(cfg *CloudStorage) (StorageClient, error) {
+func NewStorageClient(cfg *CloudStorage, creds Credentials) (StorageClient, error) {
 	switch cfg.Provider {
 	case TypeS3:
-		return NewS3Client(cfg)
+		return NewS3Client(cfg, creds)
 	case TypeR2:
-		return NewR2Client(cfg)
+		return NewR2Client(cfg, creds)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", cfg.Provider)
 	}

@@ -28,6 +28,24 @@ type FileReader interface {
 	Close() error
 }
 
+// CommandRunner executes a local program directly with an argument vector.
+// Remote readers intentionally do not implement it because SSH exec requests
+// are interpreted by a remote shell.
+type CommandRunner interface {
+	LookPath(name string) error
+	ExecCommand(name string, args, env []string, dst io.Writer) error
+}
+
+// RemoteCommandRunner provides the secure primitives needed to run a streamed
+// command over SSH. Implementations may use a remote shell internally, but
+// must quote argv and environment values rather than accepting a command
+// string from callers.
+type RemoteCommandRunner interface {
+	CreateCredentialFile(prefix, contents string) (string, error)
+	RemoveCredentialFile(path string) error
+	ExecRemoteCommand(name string, args, env []string, dst io.Writer) error
+}
+
 // GetFileReader is a helper to decide which reader to use
 func GetFileReader(ssh *SSHConn) (FileReader, error) {
 	if ssh.Required {

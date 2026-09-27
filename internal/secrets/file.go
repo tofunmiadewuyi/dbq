@@ -2,19 +2,15 @@ package secrets
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"strings"
 )
 
-// fileManager is used on systems where the keyring/Secret Service is unavailable (e.g. headless Linux servers).
-// Secrets are stored in a JSON file at ~/.config/dbq/.secrets with 0600 permissions.
-type fileManager struct {
-	path string
-	mu   sync.Mutex
-}
-
-func newFileManager() *fileManager {
+// legacySecretsPath is the location used by dbq's removed plaintext fallback.
+// It remains here only so existing installations can be migrated once.
+func legacySecretsPath() string {
 	var dir string
 	if os.Getuid() == 0 {
 		dir = "/etc/dbq"
@@ -22,76 +18,50 @@ func newFileManager() *fileManager {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, ".config", "dbq")
 	}
-	return &fileManager{path: filepath.Join(dir, ".secrets")}
+	return filepath.Join(dir, ".secrets")
 }
 
-func (m *fileManager) load() (map[string]string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	data, err := os.ReadFile(m.path)
+// migrateLegacyFile copies a legacy plaintext store into dst, verifies every
+// value can be read back, and removes the file only after full verification.
+// A partial failure deliberately leaves the source file intact so a later run
+// can retry without losing credentials.
+func migrateLegacyFile(path string, dst legacyStore) error {
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return make(map[string]string), nil
+		return nil
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
+
 	var store map[string]string
 	if err := json.Unmarshal(data, &store); err != nil {
-		return nil, err
+		return fmt.Errorf("read %s: %w", path, err)
 	}
-	return store, nil
-}
 
-func (m *fileManager) save(store map[string]string) error {
-	if err := os.MkdirAll(filepath.Dir(m.path), 0700); err != nil {
-		return err
+	for account, value := range store {
+		jobID, key, ok := strings.Cut(account, "/")
+		if !ok || jobID == "" || key == "" {
+			return fmt.Errorf("invalid legacy secret account %q", account)
+		}
+		if err := dst.Set(jobID, key, value); err != nil {
+			return fmt.Errorf("store %q in keyring: %w", account, err)
+		}
 	}
-	data, err := json.Marshal(store)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(m.path, data, 0600)
-}
 
-func (m *fileManager) Set(jobID, key, value string) error {
-	store, err := m.load()
-	if err != nil {
-		return err
+	for account, want := range store {
+		jobID, key, _ := strings.Cut(account, "/")
+		got, err := dst.Get(jobID, key)
+		if err != nil {
+			return fmt.Errorf("verify %q in keyring: %w", account, err)
+		}
+		if got != want {
+			return fmt.Errorf("verify %q in keyring: value mismatch", account)
+		}
 	}
-	store[jobID+"/"+key] = value
-	return m.save(store)
-}
 
-func (m *fileManager) Get(jobID, key string) (string, error) {
-	store, err := m.load()
-	if err != nil {
-		return "", err
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove migrated plaintext file %s: %w", path, err)
 	}
-	v, ok := store[jobID+"/"+key]
-	if !ok {
-		return "", ErrNotFound
-	}
-	return v, nil
-}
-
-func (m *fileManager) Delete(jobID, key string) error {
-	store, err := m.load()
-	if err != nil {
-		return err
-	}
-	delete(store, jobID+"/"+key)
-	return m.save(store)
-}
-
-// DeleteAll removes every known secret for the job in a single write.
-func (m *fileManager) DeleteAll(jobID string) error {
-	store, err := m.load()
-	if err != nil {
-		return err
-	}
-	for _, k := range allKeys {
-		delete(store, jobID+"/"+k)
-	}
-	return m.save(store)
+	return nil
 }
