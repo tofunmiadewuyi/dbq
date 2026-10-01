@@ -116,7 +116,7 @@ func (m *MySQL) Test(j *SourceJob, r reader.FileReader) error {
 			return fmt.Errorf("create MySQL credential file: %w", err)
 		}
 		defer cleanup()
-		args := []string{"--defaults-extra-file=" + defaultsFile, "-h", j.Host, "-P", j.Port, "-u", j.Username, "ping"}
+		args := []string{"--defaults-extra-file=" + defaultsFile, "--connect-timeout=10", "-h", j.Host, "-P", j.Port, "-u", j.Username, "ping"}
 		return local.ExecCommand("mysqladmin", args, []string{"MYSQL_PWD"}, io.Discard)
 	}
 	remote, ok := r.(reader.RemoteCommandRunner)
@@ -127,7 +127,7 @@ func (m *MySQL) Test(j *SourceJob, r reader.FileReader) error {
 	if err != nil {
 		return fmt.Errorf("create remote MySQL credential file: %w", err)
 	}
-	args := []string{"--defaults-extra-file=" + defaultsFile, "-h", j.Host, "-P", j.Port, "-u", j.Username, "ping"}
+	args := []string{"--defaults-extra-file=" + defaultsFile, "--connect-timeout=10", "-h", j.Host, "-P", j.Port, "-u", j.Username, "ping"}
 	runErr := remote.ExecRemoteCommand("mysqladmin", args, []string{"MYSQL_PWD"}, io.Discard)
 	cleanupErr := remote.RemoveCredentialFile(defaultsFile)
 	if runErr != nil {

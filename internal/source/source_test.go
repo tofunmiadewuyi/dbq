@@ -153,12 +153,15 @@ func TestPostgresLocalTestUsesArgvAndCredentialFile(t *testing.T) {
 	if err := (&Postgres{}).Test(job, r); err != nil {
 		t.Fatal(err)
 	}
-	if r.call.name != "pg_dump" {
+	if r.call.name != "psql" {
 		t.Fatalf("command = %q", r.call.name)
 	}
-	wantArgs := []string{"--schema-only", "-w", "-h", job.Host, "-p", job.Port, "-U", job.Username, "-d", job.Name}
+	wantArgs := postgresHealthArgs(job)
 	if !reflect.DeepEqual(r.call.args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", r.call.args, wantArgs)
+	}
+	if !reflect.DeepEqual(r.call.env, postgresHealthEnv(r.call.credentialPath)) {
+		t.Fatalf("env = %#v", r.call.env)
 	}
 	if strings.Contains(strings.Join(append(r.call.args, r.call.env...), " "), job.Password) {
 		t.Fatal("password appeared in argv or environment")
@@ -193,7 +196,7 @@ func TestMySQLLocalTestUsesArgvAndCredentialFile(t *testing.T) {
 	if len(r.call.args) == 0 || !strings.HasPrefix(r.call.args[0], "--defaults-extra-file=") {
 		t.Fatalf("defaults file is not the first argument: %#v", r.call.args)
 	}
-	wantTail := []string{"-h", job.Host, "-P", job.Port, "-u", job.Username, "ping"}
+	wantTail := []string{"--connect-timeout=10", "-h", job.Host, "-P", job.Port, "-u", job.Username, "ping"}
 	if !reflect.DeepEqual(r.call.args[1:], wantTail) {
 		t.Fatalf("args = %#v, want defaults file followed by %#v", r.call.args, wantTail)
 	}
@@ -224,9 +227,12 @@ func TestPostgresSSHTestKeepsPasswordOutOfCommand(t *testing.T) {
 	if err := (&Postgres{}).Test(job, r); err != nil {
 		t.Fatal(err)
 	}
-	wantArgs := []string{"--schema-only", "-w", "-h", job.Host, "-p", job.Port, "-U", job.Username, "-d", job.Name}
-	if r.name != "pg_dump" || !reflect.DeepEqual(r.args, wantArgs) {
-		t.Fatalf("command = %q %#v, want pg_dump %#v", r.name, r.args, wantArgs)
+	wantArgs := postgresHealthArgs(job)
+	if r.name != "psql" || !reflect.DeepEqual(r.args, wantArgs) {
+		t.Fatalf("command = %q %#v, want psql %#v", r.name, r.args, wantArgs)
+	}
+	if !reflect.DeepEqual(r.env, postgresHealthEnv(r.credentialPath)) {
+		t.Fatalf("env = %#v", r.env)
 	}
 	if strings.Contains(strings.Join(append(r.args, r.env...), " "), job.Password) {
 		t.Fatal("password appeared in remote command")
@@ -252,7 +258,7 @@ func TestMySQLSSHTestKeepsPasswordOutOfCommand(t *testing.T) {
 	if err := (&MySQL{}).Test(job, r); err != nil {
 		t.Fatal(err)
 	}
-	wantArgs := []string{"--defaults-extra-file=" + r.credentialPath, "-h", job.Host, "-P", job.Port, "-u", job.Username, "ping"}
+	wantArgs := []string{"--defaults-extra-file=" + r.credentialPath, "--connect-timeout=10", "-h", job.Host, "-P", job.Port, "-u", job.Username, "ping"}
 	if r.name != "mysqladmin" || !reflect.DeepEqual(r.args, wantArgs) {
 		t.Fatalf("command = %q %#v, want mysqladmin %#v", r.name, r.args, wantArgs)
 	}

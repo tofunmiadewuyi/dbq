@@ -17,12 +17,19 @@ type fakeExecutor struct {
 	result  engine.Result
 	err     error
 	called  bool
+	health  engine.HealthResult
 }
 
 func (e *fakeExecutor) Run(_ context.Context, req engine.Request) (engine.Result, error) {
 	e.called = true
 	e.request = req
 	return e.result, e.err
+}
+
+func (e *fakeExecutor) Health(_ context.Context, req engine.Request) engine.HealthResult {
+	e.called = true
+	e.request = req
+	return e.health
 }
 
 func requestJSON(t *testing.T, req Request) string {
@@ -86,6 +93,25 @@ func TestRunReportsExecutionFailureAsJSON(t *testing.T) {
 	result := decodeResult(t, &out)
 	if code != 1 || result.Status != "failed" || result.Error != "dump failed" {
 		t.Fatalf("code=%d result=%#v", code, result)
+	}
+}
+
+func TestHealthOperationReturnsComponentResults(t *testing.T) {
+	req := validRequest()
+	req.Operation = "health"
+	executor := &fakeExecutor{health: engine.HealthResult{Checks: []engine.HealthCheck{
+		{Name: "database", Duration: 12 * time.Millisecond},
+		{Name: "storage", Duration: 3 * time.Millisecond, Error: errors.New("permission denied")},
+	}}}
+	var out bytes.Buffer
+	code := Run(context.Background(), strings.NewReader(requestJSON(t, req)), &out, &bytes.Buffer{},
+		env(map[string]string{DatabasePasswordEnv: "database-secret"}), executor)
+	result := decodeResult(t, &out)
+	if code != 1 || result.Status != "failed" || len(result.Checks) != 2 {
+		t.Fatalf("code=%d result=%#v", code, result)
+	}
+	if result.Checks[0].Status != "succeeded" || result.Checks[1].Status != "failed" {
+		t.Fatalf("checks = %#v", result.Checks)
 	}
 }
 

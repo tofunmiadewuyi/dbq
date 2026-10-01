@@ -47,6 +47,7 @@ type Storage struct {
 
 type Request struct {
 	Version   int      `json:"version"`
+	Operation string   `json:"operation,omitempty"`
 	ID        string   `json:"id"`
 	Name      string   `json:"name"`
 	Retention int      `json:"retention"`
@@ -64,10 +65,19 @@ type Result struct {
 	PrunedBackups  int       `json:"pruned_backups"`
 	RetentionError string    `json:"retention_error,omitempty"`
 	Error          string    `json:"error,omitempty"`
+	Checks         []Check   `json:"checks,omitempty"`
+}
+
+type Check struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	DurationMS int64  `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
 }
 
 type Executor interface {
 	Run(context.Context, engine.Request) (engine.Result, error)
+	Health(context.Context, engine.Request) engine.HealthResult
 }
 
 type GetenvFunc func(string) string
@@ -83,6 +93,13 @@ func Run(ctx context.Context, in io.Reader, out, diagnostic io.Writer, getenv Ge
 	engineReq, err := resolveRequest(req, getenv)
 	if err != nil {
 		writeResult(out, Result{Version: ContractVersion, Status: "failed", Error: err.Error()}, diagnostic)
+		return 2
+	}
+	if req.Operation == "health" {
+		return runHealth(ctx, out, diagnostic, executor, engineReq)
+	}
+	if req.Operation != "" && req.Operation != "run" {
+		writeResult(out, Result{Version: ContractVersion, Status: "failed", Error: "operation must be run or health"}, diagnostic)
 		return 2
 	}
 	result, runErr := executor.Run(ctx, engineReq)
@@ -103,6 +120,30 @@ func Run(ctx context.Context, in io.Reader, out, diagnostic io.Writer, getenv Ge
 		return 1
 	}
 	if runErr != nil {
+		return 1
+	}
+	return 0
+}
+
+func runHealth(ctx context.Context, out, diagnostic io.Writer, executor Executor, req engine.Request) int {
+	health := executor.Health(ctx, req)
+	response := Result{Version: ContractVersion, Status: "succeeded"}
+	for _, check := range health.Checks {
+		item := Check{Name: check.Name, Status: "succeeded", DurationMS: check.Duration.Milliseconds()}
+		if check.Error != nil {
+			item.Status = "failed"
+			item.Error = check.Error.Error()
+		}
+		response.Checks = append(response.Checks, item)
+	}
+	if err := health.Error(); err != nil {
+		response.Status = "failed"
+		response.Error = err.Error()
+	}
+	if err := writeResult(out, response, diagnostic); err != nil {
+		return 1
+	}
+	if response.Status == "failed" {
 		return 1
 	}
 	return 0

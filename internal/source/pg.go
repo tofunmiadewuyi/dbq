@@ -116,7 +116,7 @@ func (pg *Postgres) DumpRemote(j *SourceJob, r reader.FileReader, remotePath str
 }
 
 func (pg *Postgres) Test(j *SourceJob, r reader.FileReader) error {
-	if err := checkPgDump(r); err != nil {
+	if err := checkPostgresTools(r); err != nil {
 		return err
 	}
 	if local, ok := r.(reader.CommandRunner); ok {
@@ -129,8 +129,8 @@ func (pg *Postgres) Test(j *SourceJob, r reader.FileReader) error {
 			return fmt.Errorf("create PostgreSQL credential file: %w", err)
 		}
 		defer cleanup()
-		args := []string{"--schema-only", "-w", "-h", j.Host, "-p", j.Port, "-U", j.Username, "-d", j.Name}
-		return local.ExecCommand("pg_dump", args, []string{"PGPASSWORD", "PGPASSFILE=" + passfile}, io.Discard)
+		args := postgresHealthArgs(j)
+		return local.ExecCommand("psql", args, postgresHealthEnv(passfile), io.Discard)
 	}
 	remote, ok := r.(reader.RemoteCommandRunner)
 	if !ok {
@@ -144,17 +144,49 @@ func (pg *Postgres) Test(j *SourceJob, r reader.FileReader) error {
 	if err != nil {
 		return fmt.Errorf("create remote PostgreSQL credential file: %w", err)
 	}
-	args := []string{"--schema-only", "-w", "-h", j.Host, "-p", j.Port, "-U", j.Username, "-d", j.Name}
-	runErr := remote.ExecRemoteCommand("pg_dump", args, []string{"PGPASSWORD", "PGPASSFILE=" + passfile}, io.Discard)
+	runErr := remote.ExecRemoteCommand("psql", postgresHealthArgs(j), postgresHealthEnv(passfile), io.Discard)
 	cleanupErr := remote.RemoveCredentialFile(passfile)
 	if runErr != nil {
 		if cleanupErr != nil {
-			return fmt.Errorf("pg_dump: %w (also failed to remove remote credential file: %v)", runErr, cleanupErr)
+			return fmt.Errorf("psql: %w (also failed to remove remote credential file: %v)", runErr, cleanupErr)
 		}
 		return runErr
 	}
 	if cleanupErr != nil {
 		return fmt.Errorf("remove remote PostgreSQL credential file: %w", cleanupErr)
+	}
+	return nil
+}
+
+func postgresHealthArgs(j *SourceJob) []string {
+	return []string{
+		"--no-password", "--host", j.Host, "--port", j.Port,
+		"--username", j.Username, "--dbname", j.Name,
+		"--no-align", "--tuples-only", "--command", "SELECT 1",
+	}
+}
+
+func postgresHealthEnv(passfile string) []string {
+	return []string{
+		"PGPASSWORD",
+		"PGPASSFILE=" + passfile,
+		"PGCONNECT_TIMEOUT=10",
+		"PGOPTIONS=-c statement_timeout=10000",
+	}
+}
+
+func checkPostgresTools(r reader.FileReader) error {
+	if err := checkPgDump(r); err != nil {
+		return err
+	}
+	if local, ok := r.(reader.CommandRunner); ok {
+		if err := local.LookPath("psql"); err != nil {
+			return fmt.Errorf("psql not found on target host — install postgresql-client")
+		}
+		return nil
+	}
+	if _, err := r.Exec("which psql"); err != nil {
+		return fmt.Errorf("psql not found on target host — install postgresql-client")
 	}
 	return nil
 }

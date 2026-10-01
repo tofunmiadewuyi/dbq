@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -238,5 +239,40 @@ func TestSourceAndStorageTestsUseEngineDependencies(t *testing.T) {
 	}
 	if !driver.tested || !client.tested || !r.closed {
 		t.Fatalf("driver tested=%v storage tested=%v reader closed=%v", driver.tested, client.tested, r.closed)
+	}
+}
+
+func TestHealthChecksDatabaseAndWritableDirectory(t *testing.T) {
+	driver := &fakeDriver{}
+	e, _ := configuredEngine(t, driver, &fakeStorage{})
+	req := cloudRequest()
+	req.StorageType = storage.TypeDirectory
+	req.Destination = t.TempDir()
+
+	result := e.Health(context.Background(), req)
+	if err := result.Error(); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Checks) != 2 || result.Checks[0].Name != "database" || result.Checks[1].Name != "storage" {
+		t.Fatalf("checks = %#v", result.Checks)
+	}
+	if !driver.tested {
+		t.Fatal("database health check did not run")
+	}
+}
+
+func TestRunStopsBeforeDumpWhenDirectoryIsNotWritable(t *testing.T) {
+	driver := &fakeDriver{}
+	e, _ := configuredEngine(t, driver, &fakeStorage{})
+	req := cloudRequest()
+	req.StorageType = storage.TypeDirectory
+	req.Destination = filepath.Join(t.TempDir(), "missing")
+
+	_, err := e.Run(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "preflight failed") {
+		t.Fatalf("error = %v", err)
+	}
+	if driver.dumped {
+		t.Fatal("dump started after preflight failure")
 	}
 }

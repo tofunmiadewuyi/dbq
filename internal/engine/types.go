@@ -3,6 +3,8 @@
 package engine
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/tofunmiadewuyi/dbq/internal/config"
@@ -44,4 +46,24 @@ type Result struct {
 
 type TestResult struct {
 	Duration time.Duration
+}
+
+type HealthCheck struct {
+	Name     string
+	Duration time.Duration
+	Error    error
+}
+
+type HealthResult struct {
+	Checks []HealthCheck
+}
+
+func (r HealthResult) Error() error {
+	var errs []error
+	for _, check := range r.Checks {
+		if check.Error != nil {
+			errs = append(errs, fmt.Errorf("%s check failed: %w", check.Name, check.Error))
+		}
+	}
+	return errors.Join(errs...)
 }

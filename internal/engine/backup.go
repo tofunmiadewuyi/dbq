@@ -15,6 +15,10 @@ import (
 func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	started := e.now()
 	result := Result{StartedAt: started}
+	if err := e.Health(ctx, req).Error(); err != nil {
+		result.Duration = e.now().Sub(started).Round(time.Millisecond)
+		return result, fmt.Errorf("preflight failed: %w", err)
+	}
 	key, destination, err := e.runBackup(ctx, req, started)
 	result.Duration = e.now().Sub(started).Round(time.Millisecond)
 	result.StorageKey = key
