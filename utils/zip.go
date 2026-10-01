@@ -8,8 +8,9 @@ import (
 )
 
 // ZipFile compresses a single file at srcPath into a zip archive at zipPath.
+// 0600: the archive holds a full database dump.
 func ZipFile(srcPath, zipPath string) error {
-	zipFile, err := os.Create(zipPath)
+	zipFile, err := os.OpenFile(zipPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -45,7 +46,7 @@ func ZipFile(srcPath, zipPath string) error {
 	return err
 }
 
-// copyFile copies a file from src to dst.
+// CopyFile copies a file from src to dst, creating dst 0600.
 func CopyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -57,7 +58,7 @@ func CopyFile(src, dst string) error {
 		return err
 	}
 
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -66,4 +67,3 @@ func CopyFile(src, dst string) error {
 	_, err = io.Copy(out, in)
 	return err
 }
-
