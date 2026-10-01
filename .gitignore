@@ -1,5 +1,6 @@
 # binary
 dbq
+bin/
 
 # env
 .env
