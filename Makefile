@@ -1,4 +1,4 @@
-.PHONY: build start run release rerelease snapshot
+.PHONY: build build-linux start run release rerelease snapshot
 
 VERSION ?= dev
 GOOS    ?= $(shell go env GOOS)
@@ -6,7 +6,10 @@ GOARCH  ?= $(shell go env GOARCH)
 LDFLAGS  = -s -w -X main.version=$(VERSION)
 
 build:
-	go build -ldflags="$(LDFLAGS)" -o dbq ./cmd
+	go build -ldflags="$(LDFLAGS)" -o bin/dbq ./cmd
+
+build-linux:
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/dbq-linux ./cmd
 
 start: build
 	./dbq start
