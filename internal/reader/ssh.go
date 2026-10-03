@@ -138,6 +138,10 @@ func (s *SSHFileReader) Stat(path string) (fs.FileInfo, error) {
 }
 
 func (s *SSHFileReader) ExecStream(cmd string, dst io.Writer) error {
+	return s.execStream(cmd, nil, dst)
+}
+
+func (s *SSHFileReader) execStream(cmd string, src io.Reader, dst io.Writer) error {
 	session, err := s.sshClient.NewSession()
 	if err != nil {
 		return err
@@ -146,6 +150,7 @@ func (s *SSHFileReader) ExecStream(cmd string, dst io.Writer) error {
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
 	session.Stdout = dst
+	session.Stdin = src
 	if err := session.Run(cmd); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg != "" {
@@ -206,6 +211,14 @@ func (s *SSHFileReader) ExecRemoteCommand(name string, args, env []string, dst i
 		return err
 	}
 	return s.ExecStream(command, dst)
+}
+
+func (s *SSHFileReader) ExecRemoteCommandWithInput(name string, args, env []string, src io.Reader, dst io.Writer) error {
+	command, err := remoteCommand(name, args, env)
+	if err != nil {
+		return err
+	}
+	return s.execStream(command, src, dst)
 }
 
 func (s *SSHFileReader) ExecRemoteCommandToFile(name string, args, env []string, outputPath string) error {

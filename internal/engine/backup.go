@@ -102,7 +102,7 @@ func (e *Engine) uploadToCloud(ctx context.Context, req Request, started time.Ti
 // runServerSideBackup keeps the dump on the remote server and executes
 // compression, upload, and cleanup through the quoted command interface.
 func (e *Engine) runServerSideBackup(ctx context.Context, req Request, driver source.DBDriver, r reader.FileReader) (string, error) {
-	remote, ok := r.(reader.RemoteCommandRunner)
+	remote, ok := r.(reader.RemoteInputCommandRunner)
 	if !ok {
 		return "", fmt.Errorf("reader does not support secure server-side commands")
 	}
@@ -131,7 +131,7 @@ func (e *Engine) runServerSideBackup(ctx context.Context, req Request, driver so
 	if err != nil {
 		return "", fmt.Errorf("failed to generate upload URL: %w", err)
 	}
-	if err := remote.ExecRemoteCommand("curl", []string{"-s", "-f", "-X", "PUT", "-T", gzPath, "--", url}, nil, io.Discard); err != nil {
+	if err := uploadRemote(remote, gzPath, url); err != nil {
 		return "", fmt.Errorf("server upload failed: %w", err)
 	}
 	return key, nil

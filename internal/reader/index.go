@@ -46,6 +46,13 @@ type RemoteCommandRunner interface {
 	ExecRemoteCommand(name string, args, env []string, dst io.Writer) error
 }
 
+// RemoteInputCommandRunner sends input through the SSH channel, never embedding
+// it in the remote shell command or argument vector.
+type RemoteInputCommandRunner interface {
+	RemoteCommandRunner
+	ExecRemoteCommandWithInput(name string, args, env []string, src io.Reader, dst io.Writer) error
+}
+
 // RemoteFileCommandRunner writes stdout on the target without routing a dump
 // through dbq. Implementations must quote paths and keep new files private.
 type RemoteFileCommandRunner interface {

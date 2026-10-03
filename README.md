@@ -186,6 +186,9 @@ Server-side SSH dumps also use SFTP credential files and quoted command
 arguments. Dumps stay on the remote server, with private file permissions;
 existing output files are refused, and failed commands remove partial output.
 Compression, upload, and cleanup use the same quoted argument interface.
+Presigned upload URLs travel through SSH stdin into curl's configuration input,
+without appearing in remote command text or process arguments or creating a URL
+file. Curl's default configuration is disabled for these uploads.
 
 ### Example — local PostgreSQL database, upload to S3
 
@@ -259,8 +262,8 @@ frequency = "0 3 * * *"
 When `useserver = true`, dbq does not stream the dump over your SSH connection. Instead:
 
 1. `pg_dump` / `mysqldump` runs on the server and writes to `/var/tmp/dbq/` on that host
-2. A presigned PUT URL is generated on your machine (no credentials leave it)
-3. The server uploads the file directly to S3/R2 via `curl`
+2. A presigned PUT URL is generated on your machine (storage access keys stay there)
+3. The URL is sent through SSH stdin, and the server uploads the file directly to S3/R2 via `curl`
 4. The temp file is deleted from the server
 
 This is useful when your SSH connection is slow but the server has fast outbound internet to AWS/Cloudflare.
