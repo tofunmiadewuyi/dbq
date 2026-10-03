@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"time"
 
@@ -12,9 +13,13 @@ import (
 	"github.com/tofunmiadewuyi/dbq/internal/storage"
 )
 
-func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
+func (e *Engine) Run(ctx context.Context, req Request) (result Result, err error) {
+	defer func() {
+		err = redactError(err, req.Secrets)
+		result.RetentionError = redactError(result.RetentionError, req.Secrets)
+	}()
 	started := e.now()
-	result := Result{StartedAt: started}
+	result = Result{StartedAt: started}
 	if err := e.Health(ctx, req).Error(); err != nil {
 		result.Duration = e.now().Sub(started).Round(time.Millisecond)
 		return result, fmt.Errorf("preflight failed: %w", err)
@@ -94,9 +99,13 @@ func (e *Engine) uploadToCloud(ctx context.Context, req Request, started time.Ti
 	return key, nil
 }
 
-// runServerSideBackup preserves dbq's existing useserver behavior. It remains
-// intentionally separate from the hardened streamed SSH path.
+// runServerSideBackup keeps the dump on the remote server and executes
+// compression, upload, and cleanup through the quoted command interface.
 func (e *Engine) runServerSideBackup(ctx context.Context, req Request, driver source.DBDriver, r reader.FileReader) (string, error) {
+	remote, ok := r.(reader.RemoteCommandRunner)
+	if !ok {
+		return "", fmt.Errorf("reader does not support secure server-side commands")
+	}
 	timestamp := e.now()
 	fileName := storage.BackupFilename(req.Name, req.Database.Name, timestamp, ".dump")
 	remotePath := fmt.Sprintf("/var/tmp/%s/%s", config.AppName, fileName)
@@ -107,11 +116,11 @@ func (e *Engine) runServerSideBackup(ctx context.Context, req Request, driver so
 	if _, err := r.Exec("which gzip"); err != nil {
 		return "", fmt.Errorf("gzip not found on remote host — install gzip")
 	}
-	if _, err := r.Exec(fmt.Sprintf("gzip '%s'", remotePath)); err != nil {
+	if err := remote.ExecRemoteCommand("gzip", []string{"--", remotePath}, nil, io.Discard); err != nil {
 		return "", fmt.Errorf("failed to compress dump: %w", err)
 	}
 	gzPath := remotePath + ".gz"
-	defer func() { _, _ = r.Exec(fmt.Sprintf("rm -f '%s'", gzPath)) }()
+	defer func() { _ = remote.ExecRemoteCommand("rm", []string{"-f", "--", gzPath}, nil, io.Discard) }()
 
 	client, err := e.newStorage(&req.CloudStorage, e.storageCredentials(req))
 	if err != nil {
@@ -122,7 +131,7 @@ func (e *Engine) runServerSideBackup(ctx context.Context, req Request, driver so
 	if err != nil {
 		return "", fmt.Errorf("failed to generate upload URL: %w", err)
 	}
-	if _, err := r.Exec(fmt.Sprintf("curl -s -f -X PUT -T '%s' '%s'", gzPath, url)); err != nil {
+	if err := remote.ExecRemoteCommand("curl", []string{"-s", "-f", "-X", "PUT", "-T", gzPath, "--", url}, nil, io.Discard); err != nil {
 		return "", fmt.Errorf("server upload failed: %w", err)
 	}
 	return key, nil

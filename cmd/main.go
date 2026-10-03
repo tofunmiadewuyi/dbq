@@ -9,15 +9,20 @@ import (
 
 	"github.com/tofunmiadewuyi/dbq/internal/agent"
 	"github.com/tofunmiadewuyi/dbq/internal/engine"
+	"github.com/tofunmiadewuyi/dbq/internal/job"
 	"github.com/tofunmiadewuyi/dbq/internal/secrets"
 )
 
 type Session struct {
-	secrets secrets.Provider
+	secrets secrets.Store
 }
 
 func newSession() *Session {
-	provider, err := secrets.New()
+	if err := secrets.RequireMigration(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	provider, err := secrets.NewConfigured()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not initialize secure secret storage: %v\n", err)
 		os.Exit(1)
@@ -39,6 +44,21 @@ func main() {
 			os.Exit(2)
 		}
 		os.Exit(agent.Run(context.Background(), os.Stdin, os.Stdout, os.Stderr, os.Getenv, engine.New()))
+
+	case "secrets":
+		if len(os.Args) != 3 || os.Args[2] != "migrate" {
+			fmt.Fprintln(os.Stderr, "Usage: dbq secrets migrate")
+			os.Exit(2)
+		}
+		provider, err := secrets.NewConfigured()
+		if err == nil {
+			err = job.MigrateSecrets(provider)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "secret migration failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Legacy secrets migrated and verified in the selected store; plaintext sources cleaned.")
 
 	case "start":
 		newSession().startCLI()
@@ -93,6 +113,7 @@ func main() {
 		fmt.Println()
 		fmt.Println("Commands:")
 		fmt.Println("  agent           Execute one JSON request from stdin and write one JSON result")
+		fmt.Println("  secrets migrate  Move legacy plaintext credentials into the selected store")
 		fmt.Println("  start            Open the interactive job manager")
 		fmt.Println("  run <job-id>     Run a backup job by ID")
 		fmt.Println("  logs <job-id> [--lines <N>]    Print the log history for a job (last N entries)")

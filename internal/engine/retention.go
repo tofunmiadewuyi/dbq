@@ -8,7 +8,8 @@ import (
 )
 
 // Prune enforces keep-last-N retention and returns the number deleted.
-func (e *Engine) Prune(ctx context.Context, req Request) (int, error) {
+func (e *Engine) Prune(ctx context.Context, req Request) (count int, err error) {
+	defer func() { err = redactError(err, req.Secrets) }()
 	if req.Retention <= 0 {
 		return 0, nil
 	}

@@ -6,9 +6,11 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/tofunmiadewuyi/dbq/internal/config"
+	"github.com/tofunmiadewuyi/dbq/internal/secrets"
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
@@ -34,7 +36,10 @@ func (s *SystemdScheduler) Install(j *SchedulerJob) error {
 		return fmt.Errorf("failed to create systemd unit dir: %w", err)
 	}
 
-	service := serviceContent(j.Name, j.ID, binaryPath)
+	service, err := serviceContent(j, binaryPath)
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(dir, serviceFileName(j.ID)), []byte(service), 0644); err != nil {
 		return fmt.Errorf("failed to write service file: %w", err)
 	}
@@ -45,6 +50,10 @@ func (s *SystemdScheduler) Install(j *SchedulerJob) error {
 	}
 	if err := os.WriteFile(filepath.Join(dir, timerFileName(j.ID)), []byte(timer), 0644); err != nil {
 		return fmt.Errorf("failed to write timer file: %w", err)
+	}
+
+	if err := daemonReload(); err != nil {
+		return err
 	}
 
 	if err := systemctl(j.ID, "enable", "--now"); err != nil {
@@ -82,14 +91,37 @@ func timerFileName(id string) string {
 	return fmt.Sprintf("%s-%s.timer", config.AppName, id)
 }
 
-func serviceContent(jobName, jobId string, binaryPath string) string {
+// unitQuote escapes systemd specifiers and quoted directive values.
+func unitQuote(value string) string {
+	return strconv.Quote(strings.ReplaceAll(value, "%", "%%"))
+}
+
+func serviceContent(j *SchedulerJob, binaryPath string) (string, error) {
+	if err := secrets.ValidateJobID(j.ID); err != nil {
+		return "", err
+	}
+	if strings.ContainsAny(j.Name+binaryPath+j.EncryptedCredentialPath, "\r\n\x00") {
+		return "", fmt.Errorf("invalid newline or NUL in service configuration")
+	}
+	var credential string
+	if j.EncryptedCredentialPath != "" {
+		if j.CredentialName != "dbq-"+j.ID || !filepath.IsAbs(j.EncryptedCredentialPath) {
+			return "", fmt.Errorf("invalid encrypted credential binding")
+		}
+		if _, err := os.Stat(j.EncryptedCredentialPath); err != nil {
+			return "", fmt.Errorf("encrypted credentials unavailable: %w", err)
+		}
+		credential = "Environment=DBQ_SECRETS_PROVIDER=systemd\nLoadCredentialEncrypted=" + unitQuote(j.CredentialName+":"+j.EncryptedCredentialPath) + "\n"
+	} else {
+		credential = "Environment=DBQ_SECRETS_PROVIDER=keyring\n"
+	}
 	return fmt.Sprintf(`[Unit]
 Description=dbq backup — %s
 
 [Service]
 Type=oneshot
-ExecStart=%s run %s
-`, jobName, binaryPath, jobId)
+%sExecStart=%s run %s
+`, strings.ReplaceAll(j.Name, "%", "%%"), credential, unitQuote(binaryPath), unitQuote(j.ID)), nil
 }
 
 func timerContent(jobName, jobFrequency string) (string, error) {
@@ -107,7 +139,7 @@ Persistent=true
 
 [Install]
 WantedBy=timers.target
-`, jobName, onCalendar), nil
+`, strings.ReplaceAll(jobName, "%", "%%"), onCalendar), nil
 }
 
 func systemctl(jobId string, args ...string) error {

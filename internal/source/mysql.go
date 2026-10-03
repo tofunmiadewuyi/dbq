@@ -90,14 +90,22 @@ func (m *MySQL) DumpRemote(j *SourceJob, r reader.FileReader, remotePath string)
 		return err
 	}
 
-	cmd := fmt.Sprintf(
-		"mkdir -p '%s' && MYSQL_PWD='%s' mysqldump -h %s -P %s -u %s %s > '%s'",
-		filepath.Dir(remotePath),
-		j.Password, j.Host, j.Port, j.Username, j.Name, remotePath,
-	)
-
-	if _, err := r.Exec(cmd); err != nil {
-		r.Exec(fmt.Sprintf("rm -f '%s'", remotePath)) //nolint:errcheck
+	remote, ok := r.(reader.RemoteFileCommandRunner)
+	if !ok {
+		return errors.New("reader does not support secure server-side command execution")
+	}
+	contents := mysqlOptionFile(j.Password)
+	credentialPath, err := remote.CreateCredentialFile("dbq-mysql-", contents)
+	if err != nil {
+		return fmt.Errorf("create remote credential file: %w", err)
+	}
+	args := []string{"--defaults-extra-file=" + credentialPath, "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
+	runErr := remote.ExecRemoteCommandToFile("mysqldump", args, []string{"PGPASSWORD", "MYSQL_PWD"}, remotePath)
+	cleanupErr := remote.RemoveCredentialFile(credentialPath)
+	if cleanupErr != nil {
+		cleanupErr = fmt.Errorf("remove remote credential file: %w", cleanupErr)
+	}
+	if err := errors.Join(runErr, cleanupErr); err != nil {
 		return fmt.Errorf("mysqldump: %w", err)
 	}
 	return nil

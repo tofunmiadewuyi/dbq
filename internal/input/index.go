@@ -3,10 +3,13 @@ package input
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 func Ask(question string) string {
@@ -44,12 +47,43 @@ func AskValid(question string, validate func(string) error, def string) string {
 
 }
 
+// AskSecret reads without terminal echo and never prints the existing value.
+// Non-terminal callers must use the agent contract instead of an echoed fallback.
+func AskSecret(question string, validate func(string) error, existing string) (string, error) {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return "", errors.New("secret entry requires a terminal; external runners should use dbq agent")
+	}
+	for {
+		if existing != "" {
+			fmt.Print(question, "[Enter to keep current value]: ")
+		} else {
+			fmt.Print(question)
+		}
+		data, err := term.ReadPassword(fd)
+		fmt.Println()
+		if err != nil {
+			return "", errors.New("could not read secret from terminal")
+		}
+		answer := string(data)
+		clear(data)
+		if answer == "" {
+			answer = existing
+		}
+		if validate(answer) != nil {
+			fmt.Println("Invalid secret; try again.")
+			continue
+		}
+		return answer, nil
+	}
+}
+
 func AskValidInt(q string, validate func(string) error, def string) int {
 	ans := AskValid(q, validate, def)
 	i, err := strconv.Atoi(ans)
 	if err != nil {
 		fmt.Println("invalid:", err)
-	return AskValidInt(q, validate, def)
+		return AskValidInt(q, validate, def)
 	}
 
 	return i

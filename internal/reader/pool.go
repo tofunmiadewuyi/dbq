@@ -195,6 +195,15 @@ func (p *SSHConnectionPool) ExecRemoteCommand(name string, args, env []string, d
 	return conn.ExecRemoteCommand(name, args, env, dst)
 }
 
+func (p *SSHConnectionPool) ExecRemoteCommandToFile(name string, args, env []string, path string) error {
+	conn, err := p.get()
+	if err != nil {
+		return err
+	}
+	defer p.put(conn)
+	return conn.ExecRemoteCommandToFile(name, args, env, path)
+}
+
 func (p *SSHConnectionPool) Exec(cmd string) ([]byte, error) {
 	conn, err := p.get()
 	if err != nil {

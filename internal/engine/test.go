@@ -13,7 +13,10 @@ import (
 
 func (e *Engine) TestSource(_ context.Context, req Request) (result TestResult, err error) {
 	started := e.now()
-	defer func() { result.Duration = e.now().Sub(started).Round(time.Millisecond) }()
+	defer func() {
+		result.Duration = e.now().Sub(started).Round(time.Millisecond)
+		err = redactError(err, req.Secrets)
+	}()
 	driver, err := e.newDriver(req.Database.Type)
 	if err != nil {
 		return TestResult{}, fmt.Errorf("db driver error: %w", err)
@@ -111,7 +114,10 @@ func runningUser() string {
 
 func (e *Engine) TestStorage(ctx context.Context, req Request) (result TestResult, err error) {
 	started := e.now()
-	defer func() { result.Duration = e.now().Sub(started).Round(time.Millisecond) }()
+	defer func() {
+		result.Duration = e.now().Sub(started).Round(time.Millisecond)
+		err = redactError(err, req.Secrets)
+	}()
 	client, err := e.newStorage(&req.CloudStorage, e.storageCredentials(req))
 	if err != nil {
 		return TestResult{}, fmt.Errorf("failed to init storage client: %w", err)

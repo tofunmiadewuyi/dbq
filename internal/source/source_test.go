@@ -42,26 +42,6 @@ func (m *mockReader) ReadFile(path string) ([]byte, error)       { return nil, n
 func (m *mockReader) Stat(path string) (fs.FileInfo, error)      { return nil, nil }
 func (m *mockReader) Close() error                               { return nil }
 
-// calledContaining returns the first recorded call that contains substr, or "".
-func (m *mockReader) calledContaining(substr string) string {
-	for _, c := range m.calls {
-		if strings.Contains(c, substr) {
-			return c
-		}
-	}
-	return ""
-}
-
-// calledWith returns true if any recorded call starts with prefix.
-func (m *mockReader) calledWith(prefix string) bool {
-	for _, c := range m.calls {
-		if strings.HasPrefix(c, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 type directCall struct {
 	name              string
 	args              []string
@@ -86,6 +66,7 @@ type remoteReader struct {
 	env               []string
 	runErr            error
 	removeErr         error
+	outputPath        string
 }
 
 func (r *remoteReader) CreateCredentialFile(prefix, contents string) (string, error) {
@@ -106,6 +87,11 @@ func (r *remoteReader) ExecRemoteCommand(name string, args, env []string, _ io.W
 	r.args = append([]string(nil), args...)
 	r.env = append([]string(nil), env...)
 	return r.runErr
+}
+
+func (r *remoteReader) ExecRemoteCommandToFile(name string, args, env []string, outputPath string) error {
+	r.outputPath = outputPath
+	return r.ExecRemoteCommand(name, args, env, io.Discard)
 }
 
 func (r *directReader) LookPath(string) error { return nil }
@@ -297,36 +283,6 @@ func TestPostgresDumpRemote_ToolNotFound(t *testing.T) {
 	}
 }
 
-func TestPostgresDumpRemote_CommandContents(t *testing.T) {
-	r := &mockReader{}
-	job := &SourceJob{Host: "db.example.com", Port: "5432", Username: "admin", Password: "secret", Name: "mydb"}
-
-	if err := (&Postgres{}).DumpRemote(job, r, "/var/tmp/dbq/test.dump"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	cmd := r.calledContaining("pg_dump -Fc")
-	if cmd == "" {
-		t.Fatal("no pg_dump -Fc command issued")
-	}
-	for _, want := range []string{"-Fc", "db.example.com", "5432", "admin", "mydb", "/var/tmp/dbq/test.dump"} {
-		if !strings.Contains(cmd, want) {
-			t.Errorf("dump command missing %q in: %s", want, cmd)
-		}
-	}
-}
-
-func TestPostgresDumpRemote_CleansUpOnFailure(t *testing.T) {
-	r := &mockReader{errors: map[string]error{"mkdir -p": errors.New("dump failed")}}
-	(&Postgres{}).DumpRemote(&SourceJob{Name: "mydb"}, r, "/tmp/test.dump") //nolint:errcheck
-
-	if !r.calledWith("rm -f '/tmp/test.dump'") {
-		t.Error("expected cleanup (rm -f) after dump failure")
-	}
-}
-
-// --- MySQL ---
-
 func TestMySQLDumpRemote_ToolNotFound(t *testing.T) {
 	r := &mockReader{errors: map[string]error{"which mysqldump": errors.New("not found")}}
 	err := (&MySQL{}).DumpRemote(&SourceJob{}, r, "/tmp/test.sql")
@@ -338,30 +294,54 @@ func TestMySQLDumpRemote_ToolNotFound(t *testing.T) {
 	}
 }
 
-func TestMySQLDumpRemote_CommandContents(t *testing.T) {
-	r := &mockReader{}
-	job := &SourceJob{Host: "db.example.com", Port: "3306", Username: "root", Password: "secret", Name: "mydb"}
-
-	if err := (&MySQL{}).DumpRemote(job, r, "/var/tmp/dbq/test.sql"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	cmd := r.calledContaining("mysqldump -h")
-	if cmd == "" {
-		t.Fatal("no mysqldump command issued")
-	}
-	for _, want := range []string{"mysqldump", "db.example.com", "3306", "root", "mydb", "/var/tmp/dbq/test.sql"} {
-		if !strings.Contains(cmd, want) {
-			t.Errorf("dump command missing %q in: %s", want, cmd)
-		}
-	}
-}
-
-func TestMySQLDumpRemote_CleansUpOnFailure(t *testing.T) {
-	r := &mockReader{errors: map[string]error{"mkdir -p": errors.New("dump failed")}}
-	(&MySQL{}).DumpRemote(&SourceJob{Name: "mydb"}, r, "/tmp/test.sql") //nolint:errcheck
-
-	if !r.calledWith("rm -f '/tmp/test.sql'") {
-		t.Error("expected cleanup (rm -f) after dump failure")
+func TestServerSideDumpKeepsPasswordOutOfCommandAndCleansCredentials(t *testing.T) {
+	for _, driver := range []struct {
+		name   string
+		driver DBDriver
+	}{{"postgres", &Postgres{}}, {"mysql", &MySQL{}}} {
+		t.Run(driver.name, func(t *testing.T) {
+			job := &SourceJob{Host: "db.example.com", Port: "5432", Username: "backup", Password: "password'$(do-not-run);end", Name: "app"}
+			for _, scenario := range []string{"success", "command failure", "cleanup failure", "both failures"} {
+				t.Run(scenario, func(t *testing.T) {
+					r := &remoteReader{}
+					runErr := errors.New("dump failed")
+					cleanupErr := errors.New("credential removal failed")
+					if strings.Contains(scenario, "command") || scenario == "both failures" {
+						r.runErr = runErr
+					}
+					if strings.Contains(scenario, "cleanup") || scenario == "both failures" {
+						r.removeErr = cleanupErr
+					}
+					outputPath := "/var/tmp/dbq/app.dump"
+					err := driver.driver.DumpRemote(job, r, outputPath)
+					for _, command := range r.calls {
+						if strings.Contains(command, job.Password) {
+							t.Fatal("password embedded in shell command")
+						}
+					}
+					if r.runErr == nil && r.removeErr == nil && err != nil {
+						t.Fatal(err)
+					}
+					if r.runErr != nil && !errors.Is(err, runErr) {
+						t.Fatal("dump failure lost")
+					}
+					if r.removeErr != nil && !errors.Is(err, cleanupErr) {
+						t.Fatal("cleanup failure lost")
+					}
+					if r.outputPath != outputPath || r.name == "" || !r.removed {
+						t.Fatal("server-side execution or credential cleanup missing")
+					}
+					if strings.Contains(strings.Join(append(r.args, r.env...), " "), job.Password) {
+						t.Fatal("password reached command arguments or environment")
+					}
+					if !strings.Contains(r.credentialContent, job.Password) {
+						t.Fatal("credential file missing password")
+					}
+					if !strings.Contains(strings.Join(append(r.args, r.env...), " "), r.credentialPath) {
+						t.Fatal("dump does not use credential file")
+					}
+				})
+			}
+		})
 	}
 }

@@ -34,5 +34,5 @@ type Job struct {
 	Database    DB                   `toml:"database"`
 	Storage     storage.CloudStorage `toml:"storage"`
 	Secrets     secrets.JobSecrets   `toml:"-"`
-	provider    secrets.Provider
+	provider    secrets.Store
 }

@@ -2,6 +2,8 @@ package job
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -95,5 +97,36 @@ func TestEngineRequestIsCompleteRuntimeSnapshot(t *testing.T) {
 	}
 	if req.Secrets != j.Secrets || req.Retention != j.Retention || req.Destination != j.Destination {
 		t.Fatalf("request did not preserve runtime values: %#v", req)
+	}
+}
+
+func TestGetJobIgnoresUnrelatedBrokenJobs(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("uses per-user job directory")
+	}
+	t.Setenv("HOME", t.TempDir())
+	if err := os.MkdirAll(JobsDir(), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(JobsDir(), "daily.toml"), []byte(`id = "daily"
+name = "Daily"`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(JobsDir(), "broken.toml"), []byte(`this is not TOML`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &stubSecretProvider{values: secrets.JobSecrets{DatabasePassword: "only-this-job"}}
+	j, err := GetJob(provider, "daily")
+	if err != nil || j.ID != "daily" || j.Secrets.DatabasePassword != "only-this-job" {
+		t.Fatalf("single job load failed: %v", err)
+	}
+	if _, err := GetJob(provider, "../daily"); err == nil {
+		t.Fatal("unsafe job path accepted")
+	}
+	if err := os.WriteFile(filepath.Join(JobsDir(), "daily.toml"), []byte(`id = "different"`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GetJob(provider, "daily"); err == nil {
+		t.Fatal("mismatched job ID accepted")
 	}
 }

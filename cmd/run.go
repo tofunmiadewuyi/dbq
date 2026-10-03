@@ -118,17 +118,10 @@ func (s *Session) pruneJob(id string) {
 
 // findJob loads the job with the given id or exits with an error.
 func (s *Session) findJob(id string) *job.Job {
-	jobs, err := job.GetJobs(s.secrets)
+	j, err := job.GetJob(s.secrets, id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load jobs: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to load job %q: %v\n", id, err)
 		os.Exit(1)
 	}
-	for i := range jobs {
-		if jobs[i].ID == id {
-			return &jobs[i]
-		}
-	}
-	fmt.Fprintf(os.Stderr, "job %q not found\n", id)
-	os.Exit(1)
-	return nil // unreachable
+	return j
 }

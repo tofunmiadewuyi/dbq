@@ -13,7 +13,7 @@ import (
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
-func StartNewJob(provider secrets.Provider) error {
+func StartNewJob(provider secrets.Store) error {
 	return JobFlow(&Job{provider: provider})
 }
 
@@ -32,7 +32,10 @@ func JobFlow(j *Job) error {
 	// name + id
 	if isNew {
 		j.Name = input.AskValid("Job name: ", func(n string) error {
-			return input.ValidateField("name", n)
+			if err := input.ValidateField("name", n); err != nil {
+				return err
+			}
+			return secrets.ValidateJobID(utils.StringToID(n))
 		}, "")
 		j.ID = utils.StringToID(j.Name)
 
@@ -98,9 +101,13 @@ func JobFlow(j *Job) error {
 		return input.ValidateField("Database username", n)
 	}, db.Username)
 
-	j.Secrets.DatabasePassword = input.AskValid("Database password: ", func(n string) error {
+	databasePassword, err := input.AskSecret("Database password: ", func(n string) error {
 		return input.ValidateField("Database password", n)
 	}, j.Secrets.DatabasePassword)
+	if err != nil {
+		return err
+	}
+	j.Secrets.DatabasePassword = databasePassword
 
 	j.PrintState(title)
 
@@ -173,12 +180,20 @@ func JobFlow(j *Job) error {
 			}, cloud.Endpoint)
 		}
 
-		j.Secrets.StorageAccessKey = input.AskValid("Access Key ID: ", func(n string) error {
+		storageAccessKey, err := input.AskSecret("Access Key ID: ", func(n string) error {
 			return input.ValidateField("AKID", n)
 		}, j.Secrets.StorageAccessKey)
-		j.Secrets.StorageSecretKey = input.AskValid("Secret Access Key: ", func(n string) error {
+		if err != nil {
+			return err
+		}
+		j.Secrets.StorageAccessKey = storageAccessKey
+		storageSecretKey, err := input.AskSecret("Secret Access Key: ", func(n string) error {
 			return input.ValidateField("SAK", n)
 		}, j.Secrets.StorageSecretKey)
+		if err != nil {
+			return err
+		}
+		j.Secrets.StorageSecretKey = storageSecretKey
 		cloud.Bucket = input.AskValid("Bucket name: ", func(n string) error {
 			return input.ValidateField("Bucket name", n)
 		}, cloud.Bucket)
@@ -195,7 +210,7 @@ func JobFlow(j *Job) error {
 		}
 	}
 
-	err := j.WriteJob()
+	err = j.WriteJob()
 	if err != nil {
 		fmt.Println("Could not save job")
 	} else {

@@ -22,7 +22,7 @@ type legacyJobCredentials struct {
 	} `toml:"storage"`
 }
 
-func GetJobs(provider secrets.Provider) ([]Job, error) {
+func GetJobs(provider secrets.Store) ([]Job, error) {
 	dir := JobsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -35,49 +35,60 @@ func GetJobs(provider secrets.Provider) ([]Job, error) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		var j Job
-		if _, err := toml.DecodeFile(path, &j); err != nil {
+		j, err := loadJob(path, provider)
+		if err != nil {
 			return nil, err
-		}
-		var legacy legacyJobCredentials
-		if _, err := toml.DecodeFile(path, &legacy); err != nil {
-			return nil, err
-		}
-		if err := hydrateSecrets(&j, provider, legacy); err != nil {
-			return nil, fmt.Errorf("load secrets for job %q: %w", j.ID, err)
 		}
 		jobs = append(jobs, j)
 	}
 	return jobs, nil
 }
 
-// hydrateSecrets loads the job's separate secret bundle. Credentials left in
-// an old TOML file are migrated only when the keyring does not already contain
-// that value, then the config is rewritten without any credential fields.
-func hydrateSecrets(j *Job, provider secrets.Provider, legacy legacyJobCredentials) error {
+// GetJob resolves only the requested job, so scheduled services need no access
+// to any other job's credentials.
+func GetJob(provider secrets.Store, id string) (*Job, error) {
+	if err := secrets.ValidateJobID(id); err != nil {
+		return nil, err
+	}
+	j, err := loadJob(filepath.Join(JobsDir(), id+".toml"), provider)
+	if err != nil {
+		return nil, err
+	}
+	if j.ID != id {
+		return nil, fmt.Errorf("job ID does not match config filename")
+	}
+	return &j, nil
+}
+
+func loadJob(path string, provider secrets.Store) (Job, error) {
+	var j Job
+	if _, err := toml.DecodeFile(path, &j); err != nil {
+		return Job{}, err
+	}
+	if err := secrets.ValidateJobID(j.ID); err != nil {
+		return Job{}, err
+	}
+	var legacy legacyJobCredentials
+	if _, err := toml.DecodeFile(path, &legacy); err != nil {
+		return Job{}, err
+	}
+	if err := hydrateSecrets(&j, provider, legacy); err != nil {
+		return Job{}, fmt.Errorf("load secrets for job %q: %w", j.ID, err)
+	}
+	return j, nil
+}
+
+// hydrateSecrets resolves credentials without modifying configuration or
+// silently choosing between conflicting legacy and stored values.
+func hydrateSecrets(j *Job, provider secrets.Store, legacy legacyJobCredentials) error {
+	if legacy.Database.Password != "" || legacy.Storage.AccessKey != "" || legacy.Storage.SecretKey != "" {
+		return fmt.Errorf("plaintext credentials present; run dbq secrets migrate")
+	}
 	j.provider = provider
 	values, err := provider.Load(j.ID)
 	if err != nil {
 		return err
 	}
-
-	hadPlaintext := legacy.Database.Password != "" ||
-		legacy.Storage.AccessKey != "" || legacy.Storage.SecretKey != ""
-	if values.DatabasePassword == "" {
-		values.DatabasePassword = legacy.Database.Password
-	}
-	if values.StorageAccessKey == "" {
-		values.StorageAccessKey = legacy.Storage.AccessKey
-	}
-	if values.StorageSecretKey == "" {
-		values.StorageSecretKey = legacy.Storage.SecretKey
-	}
 	j.Secrets = values
-
-	if hadPlaintext {
-		if err := j.WriteJob(); err != nil {
-			return fmt.Errorf("migrate credentials out of job config: %w", err)
-		}
-	}
 	return nil
 }

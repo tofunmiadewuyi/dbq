@@ -46,6 +46,13 @@ type RemoteCommandRunner interface {
 	ExecRemoteCommand(name string, args, env []string, dst io.Writer) error
 }
 
+// RemoteFileCommandRunner writes stdout on the target without routing a dump
+// through dbq. Implementations must quote paths and keep new files private.
+type RemoteFileCommandRunner interface {
+	RemoteCommandRunner
+	ExecRemoteCommandToFile(name string, args, env []string, path string) error
+}
+
 // GetFileReader is a helper to decide which reader to use
 func GetFileReader(ssh *SSHConn) (FileReader, error) {
 	if ssh.Required {

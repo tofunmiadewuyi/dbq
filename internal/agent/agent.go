@@ -23,9 +23,9 @@ const (
 	ContractVersion = 1
 	MaxRequestBytes = 1 << 20
 
-	DatabasePasswordEnv = "DBQ_DB_PASSWORD"
-	StorageAccessKeyEnv = "DBQ_STORAGE_ACCESS_KEY"
-	StorageSecretKeyEnv = "DBQ_STORAGE_SECRET_KEY"
+	DatabasePasswordEnv = secrets.DatabasePasswordEnv
+	StorageAccessKeyEnv = secrets.StorageAccessKeyEnv
+	StorageSecretKeyEnv = secrets.StorageSecretKeyEnv
 )
 
 type Database struct {
@@ -190,7 +190,11 @@ func resolveRequest(req Request, getenv GetenvFunc) (engine.Request, error) {
 	if req.Database.Port < 1 || req.Database.Port > 65535 {
 		return engine.Request{}, errors.New("database port must be between 1 and 65535")
 	}
-	databasePassword := getenv(DatabasePasswordEnv)
+	values, err := secrets.NewEnvironment(getenv).Load(req.ID)
+	if err != nil {
+		return engine.Request{}, fmt.Errorf("resolve secrets: %w", err)
+	}
+	databasePassword := values.DatabasePassword
 	if databasePassword == "" {
 		return engine.Request{}, errors.New("database password is required")
 	}
@@ -212,11 +216,11 @@ func resolveRequest(req Request, getenv GetenvFunc) (engine.Request, error) {
 		}
 		engineReq.Destination = req.Storage.Directory
 	case storage.TypeCloud:
+		engineReq.Secrets.StorageAccessKey = values.StorageAccessKey
+		engineReq.Secrets.StorageSecretKey = values.StorageSecretKey
 		if strings.TrimSpace(req.Storage.Bucket) == "" {
 			return engine.Request{}, errors.New("storage bucket is required")
 		}
-		engineReq.Secrets.StorageAccessKey = getenv(StorageAccessKeyEnv)
-		engineReq.Secrets.StorageSecretKey = getenv(StorageSecretKeyEnv)
 		if engineReq.Secrets.StorageAccessKey == "" || engineReq.Secrets.StorageSecretKey == "" {
 			return engine.Request{}, errors.New("storage credentials are required")
 		}

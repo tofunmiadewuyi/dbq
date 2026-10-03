@@ -10,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.98.0
 	github.com/pkg/sftp v1.13.10
 	golang.org/x/crypto v0.49.0
+	golang.org/x/term v0.41.0
 )
 
 require (

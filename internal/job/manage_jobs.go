@@ -10,7 +10,7 @@ import (
 	"github.com/tofunmiadewuyi/dbq/utils"
 )
 
-func ManageJobs(provider secrets.Provider, jobs []Job) error {
+func ManageJobs(provider secrets.Store, jobs []Job) error {
 	// Job selection loop — "< Back" here returns to the main menu.
 jobList:
 	for {
@@ -64,11 +64,18 @@ jobList:
 				}
 
 			case "Schedule":
-				if err := scheduler.Install(&scheduler.SchedulerJob{
-					Name:      j.Name,
-					ID:        j.ID,
-					Frequency: j.Frequency,
-				}); err != nil {
+				scheduled := &scheduler.SchedulerJob{Name: j.Name, ID: j.ID, Frequency: j.Frequency}
+				if binding, ok := j.provider.(interface {
+					EncryptedCredential(string) (string, string, error)
+				}); ok {
+					var err error
+					scheduled.CredentialName, scheduled.EncryptedCredentialPath, err = binding.EncryptedCredential(j.ID)
+					if err != nil {
+						fmt.Println("error:", err)
+						break
+					}
+				}
+				if err := scheduler.Install(scheduled); err != nil {
 					fmt.Println("error:", err)
 				} else {
 					fmt.Printf("✅ Timer scheduled — job will run on: %s\n", utils.CronToReadable(j.Frequency))

@@ -17,7 +17,7 @@ import (
 var jobTemplate = template.Must(template.New("job").Parse(`# dbq job configuration
 # Safe to edit: name, frequency, destination, and all database/storage connection fields.
 # Do not edit: id — the scheduler uses this to identify the job.
-# Credentials are stored separately in the system keychain and never appear in this file.
+# Credentials are stored separately by the configured secrets store and never appear in this file.
 
 name         = {{printf "%q" .Name}}
 id           = {{printf "%q" .ID}}

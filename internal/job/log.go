@@ -28,16 +28,24 @@ func ReadLogs(id string) (string, error) {
 
 func AppendLog(jobID, operation string, d time.Duration, err error) {
 	dir := LogsDir()
-	if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
+	if mkErr := os.MkdirAll(dir, 0700); mkErr != nil {
+		return
+	}
+	// MkdirAll leaves existing directory permissions unchanged.
+	if chmodErr := os.Chmod(dir, 0700); chmodErr != nil {
 		return
 	}
 
 	path := filepath.Join(dir, jobID+".log")
-	f, mkErr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, mkErr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if mkErr != nil {
 		return
 	}
 	defer f.Close()
+	// Tighten existing logs before appending any diagnostic text.
+	if chmodErr := f.Chmod(0600); chmodErr != nil {
+		return
+	}
 
 	ts := time.Now().Format("2006-01-02 15:04:05")
 	if err != nil {

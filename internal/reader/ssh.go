@@ -208,6 +208,31 @@ func (s *SSHFileReader) ExecRemoteCommand(name string, args, env []string, dst i
 	return s.ExecStream(command, dst)
 }
 
+func (s *SSHFileReader) ExecRemoteCommandToFile(name string, args, env []string, outputPath string) error {
+	command, err := remoteFileCommand(name, args, env, outputPath)
+	if err != nil {
+		return err
+	}
+	return s.ExecStream(command, io.Discard)
+}
+
+func remoteFileCommand(name string, args, env []string, outputPath string) (string, error) {
+	if !path.IsAbs(outputPath) || strings.ContainsRune(outputPath, '\x00') {
+		return "", errors.New("remote dump requires an absolute output path without NUL")
+	}
+	command, err := remoteCommand(name, args, env)
+	if err != nil {
+		return "", err
+	}
+	quoted := posixQuote(outputPath)
+	// Exclusive creation avoids truncating an existing backup. The command runs
+	// in a subshell so the outer shell can remove its partial output on failure.
+	return "umask 077; mkdir -p -- " + posixQuote(path.Dir(outputPath)) +
+		" && (set -C; : > " + quoted + ") && { (" + command + " > " + quoted +
+		"); dbq_dump_status=$?; if [ \"$dbq_dump_status\" -ne 0 ]; then rm -f -- " + quoted +
+		"; fi; exit \"$dbq_dump_status\"; }", nil
+}
+
 func remoteCommand(name string, args, env []string) (string, error) {
 	var command strings.Builder
 	for _, entry := range env {

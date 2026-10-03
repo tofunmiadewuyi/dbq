@@ -6,9 +6,11 @@ import (
 )
 
 type SchedulerJob struct {
-	Name      string
-	ID        string
-	Frequency string
+	Name                    string
+	ID                      string
+	Frequency               string
+	CredentialName          string
+	EncryptedCredentialPath string
 }
 
 // Scheduler manages the lifecycle of a scheduled backup job on the host OS.

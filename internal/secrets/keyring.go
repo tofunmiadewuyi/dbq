@@ -9,6 +9,20 @@ import (
 
 const service = "dbq"
 
+var _ Store = (*keyringManager)(nil)
+
+// NewKeyring initializes the OS keyring store. It never falls back to plaintext.
+// Opening a store never migrates or deletes legacy credentials.
+func NewKeyring() (Store, error) {
+	m := &keyringManager{}
+	if err := m.Set(probeKey, probeKey, "1"); err != nil {
+		return nil, fmt.Errorf("OS keyring unavailable: %w", err)
+	}
+	_ = m.DeleteKey(probeKey, probeKey)
+
+	return m, nil
+}
+
 type keyringManager struct{}
 
 func (m *keyringManager) Set(jobID, key, value string) error {

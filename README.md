@@ -79,9 +79,113 @@ Runs the backup for the given job ID non-interactively. This is what the generat
 ## Job configuration
 
 Jobs are stored as TOML files in `~/.config/dbq/jobs/` (or `/etc/dbq/jobs/` when running as root). You can create and edit them through the interactive UI.
-Credentials are stored separately in the operating-system keyring and never
-written to job TOML files. dbq does not fall back to plaintext storage when the
-keyring is unavailable.
+Credentials are stored separately by the selected secrets store and never
+written to job TOML files. An unavailable store fails without falling back to
+plaintext storage.
+
+### Secrets providers
+
+Standalone dbq defaults to the OS keyring. On headless Linux, select encrypted
+systemd credentials in `~/.config/dbq/config.toml` (or `/etc/dbq/config.toml`
+when running as root):
+
+```toml
+[secrets]
+provider = "systemd"
+```
+
+Use `provider = "keyring"` to explicitly select the OS keyring. Unknown provider
+names are errors. `DBQ_SECRETS_PROVIDER` overrides this setting; generated
+systemd services pin their provider so they do not depend on a login environment
+or subsequent changes to the interactive default.
+
+The systemd store requires `systemd-creds` with encryption support (systemd 250+
+for root, 256+ for user-scoped credentials). Setup checks a real encryption and
+decryption round trip; actual support also depends on host key access, TPM
+availability, and local authorization policy. Unsupported setups fail with no
+fallback. Non-root credentials use `--user` and the user service manager.
+
+Encrypted bundles are stored in the dbq `credentials/` directory with mode
+`0600`, inside a `0700` directory. Saves verify decryption before atomically
+replacing the previous bundle. Encryption uses systemd's `auto` mode, which
+requires a suitable host key, TPM, or both; dbq never selects its unprotected
+`null` or `auto-initrd` modes. Host-key encryption does not protect against an
+attacker who obtains both the encrypted bundle and the host key. TPM-bound
+bundles may require re-provisioning when moving to another machine.
+
+Manual runs and connection tests decrypt into memory. Scheduled services use
+`LoadCredentialEncrypted=` and read the bundle from `$CREDENTIALS_DIRECTORY`.
+A missing or malformed injected credential is an error. `dbq run <job-id>` loads
+only that job. Re-schedule existing jobs after changing the selected store;
+changing the provider does not copy credentials between stores.
+
+### Migrating legacy plaintext credentials
+
+Select the destination provider in `config.toml`, then run as the account that
+owns the jobs (root for `/etc/dbq`):
+
+```bash
+dbq secrets migrate
+```
+
+Pause configuration edits and scheduled backups during migration. The command
+imports the old `.secrets` JSON file and passwords/access keys embedded in job
+TOML into the selected keyring or systemd store. Credentials for jobs absent
+from the jobs directory are also retained.
+
+Migration validates all sources and checks all destination bundles before any
+credential write. Conflicting nonempty values stop the operation without
+choosing a winner; reconcile the source and destination values, then retry.
+Matching values are accepted, and destination-only fields are preserved.
+Unknown legacy keys, duplicate JSON accounts, invalid credential types, and
+symlinked source files are rejected.
+
+Every complete destination bundle is read back and verified before plaintext
+cleanup begins. On write or verification failure, plaintext sources remain
+intact. If some writes succeeded, rerunning the same command resumes safely.
+The command also detects source edits made during import and stops cleanup.
+Run it outside a service credential context, so verification uses the durable
+store rather than an injected runtime credential.
+
+Job configs are replaced atomically with private files after verification;
+non-secret values, including custom fields, are preserved, while TOML comments
+and formatting are normalized. The `.secrets` file is removed after config
+cleanup. Cleanup failures can leave some already-verified configs cleaned and
+other sources intact; retrying completes the remaining work. Ordinary commands
+request explicit migration rather than automatically consuming plaintext.
+
+Deleting plaintext files or fields does not erase copies in snapshots, backups,
+or the underlying storage. If those copies may have been exposed, rotate the
+credentials after migration. Existing keyring-to-systemd transfers are not part
+of this legacy plaintext migration command.
+
+The secrets boundary separates read-only `secrets.Provider` (load a job's
+credential bundle) from writable `secrets.Store` (load, save, and delete).
+The execution engine receives resolved credentials in memory and does not
+initialize a store.
+
+For external actors such as Custos, `dbq agent` uses a read-only environment
+provider with the existing `DBQ_DB_PASSWORD`, `DBQ_STORAGE_ACCESS_KEY`, and
+`DBQ_STORAGE_SECRET_KEY` contract. The external actor owns scheduling and
+credential lifecycle; dbq only executes the request. Agent mode does not read
+standalone provider settings, probe the keyring, migrate local files, or persist
+supplied credentials. Database tools' temporary plaintext credential files are
+unchanged in this step.
+
+Interactive database and storage credentials are entered without terminal echo.
+Editing shows an instruction to press Enter to keep the current value, never
+the existing credential. Secret prompts require a terminal; external runners
+continue supplying credentials through `dbq agent`.
+
+Local database commands and local shell commands strip the three agent
+credential variables plus `PGPASSWORD` and `MYSQL_PWD` from their environment.
+The parent process retains its credentials, so Custos's agent contract is
+unchanged. Database clients receive credential-file paths rather than passwords.
+
+Server-side SSH dumps also use SFTP credential files and quoted command
+arguments. Dumps stay on the remote server, with private file permissions;
+existing output files are refused, and failed commands remove partial output.
+Compression, upload, and cleanup use the same quoted argument interface.
 
 ### Example — local PostgreSQL database, upload to S3
 

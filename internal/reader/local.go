@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/tofunmiadewuyi/dbq/internal/secrets"
 )
 
 // LocalFileReader reads from local filesystem
@@ -27,6 +29,7 @@ func (l *LocalFileReader) Stat(path string) (fs.FileInfo, error) {
 
 func (l *LocalFileReader) Exec(cmd string) ([]byte, error) {
 	c := exec.Command("sh", "-c", cmd)
+	c.Env = childEnv(nil)
 	var stderr bytes.Buffer
 	c.Stderr = &stderr
 	out, err := c.Output()
@@ -42,6 +45,7 @@ func (l *LocalFileReader) Exec(cmd string) ([]byte, error) {
 
 func (l *LocalFileReader) ExecStream(cmd string, dst io.Writer) error {
 	c := exec.Command("sh", "-c", cmd)
+	c.Env = childEnv(nil)
 	var stderr bytes.Buffer
 	c.Stderr = &stderr
 	c.Stdout = dst
@@ -62,9 +66,10 @@ func (l *LocalFileReader) LookPath(name string) error {
 
 // ExecCommand executes a program directly, without a shell. env entries with
 // KEY=value override the inherited environment; a bare KEY removes it.
+// Runner credentials and password environment variables are always stripped.
 func (l *LocalFileReader) ExecCommand(name string, args, env []string, dst io.Writer) error {
 	c := exec.Command(name, args...)
-	c.Env = mergeEnv(os.Environ(), env)
+	c.Env = childEnv(env)
 	var stderr bytes.Buffer
 	c.Stderr = &stderr
 	c.Stdout = dst
@@ -76,6 +81,13 @@ func (l *LocalFileReader) ExecCommand(name string, args, env []string, dst io.Wr
 		return err
 	}
 	return nil
+}
+
+// childEnv preserves operational settings while preventing runner credentials
+// from crossing the subprocess boundary. Removals are applied after overrides.
+func childEnv(overrides []string) []string {
+	env := mergeEnv(os.Environ(), overrides)
+	return mergeEnv(env, []string{secrets.DatabasePasswordEnv, secrets.StorageAccessKeyEnv, secrets.StorageSecretKeyEnv, "PGPASSWORD", "MYSQL_PWD"})
 }
 
 func mergeEnv(base, overrides []string) []string {

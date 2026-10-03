@@ -102,14 +102,25 @@ func (pg *Postgres) DumpRemote(j *SourceJob, r reader.FileReader, remotePath str
 		return err
 	}
 
-	cmd := fmt.Sprintf(
-		"mkdir -p '%s' && PGPASSWORD='%s' pg_dump -Fc -f '%s' -h %s -p %s -U %s -d %s",
-		filepath.Dir(remotePath),
-		j.Password, remotePath, j.Host, j.Port, j.Username, j.Name,
-	)
-
-	if _, err := r.Exec(cmd); err != nil {
-		r.Exec(fmt.Sprintf("rm -f '%s'", remotePath)) //nolint:errcheck
+	remote, ok := r.(reader.RemoteFileCommandRunner)
+	if !ok {
+		return errors.New("reader does not support secure server-side command execution")
+	}
+	contents, err := pgpassLine(j)
+	if err != nil {
+		return err
+	}
+	credentialPath, err := remote.CreateCredentialFile("dbq-pgpass-", contents)
+	if err != nil {
+		return fmt.Errorf("create remote credential file: %w", err)
+	}
+	args := []string{"-Fc", "-w", "-h", j.Host, "-p", j.Port, "-U", j.Username, "-d", j.Name}
+	runErr := remote.ExecRemoteCommandToFile("pg_dump", args, []string{"PGPASSWORD", "MYSQL_PWD", "PGPASSFILE=" + credentialPath}, remotePath)
+	cleanupErr := remote.RemoveCredentialFile(credentialPath)
+	if cleanupErr != nil {
+		cleanupErr = fmt.Errorf("remove remote credential file: %w", cleanupErr)
+	}
+	if err := errors.Join(runErr, cleanupErr); err != nil {
 		return fmt.Errorf("pg_dump: %w", err)
 	}
 	return nil
