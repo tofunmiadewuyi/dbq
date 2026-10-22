@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -274,5 +275,31 @@ func TestRunStopsBeforeDumpWhenDirectoryIsNotWritable(t *testing.T) {
 	}
 	if driver.dumped {
 		t.Fatal("dump started after preflight failure")
+	}
+}
+
+func TestRunExplainsDumpSpaceErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cause error
+		space bool
+	}{
+		{"mysql disk full", errors.New("mysqldump: exit status 5: mysqldump: Got errno 28 on write"), true},
+		{"postgres disk full", errors.New("pg_dump: could not write to output file: No space left on device"), true},
+		{"filesystem disk full", &os.PathError{Op: "write", Path: "/var/tmp/dbq/dump", Err: syscall.ENOSPC}, true},
+		{"connection failure", errors.New("connection refused"), false},
+		{"other errno", errors.New("mysqldump: Got errno 280 on write"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, _ := configuredEngine(t, &fakeDriver{dumpErr: tc.cause}, &fakeStorage{})
+			_, err := e.Run(context.Background(), cloudRequest())
+			if err == nil || !strings.Contains(err.Error(), tc.cause.Error()) {
+				t.Fatalf("original diagnostic missing: %v", err)
+			}
+			friendly := strings.Contains(err.Error(), "Free space on the host receiving the dump")
+			if friendly != tc.space {
+				t.Fatalf("space guidance = %v, want %v: %v", friendly, tc.space, err)
+			}
+		})
 	}
 }

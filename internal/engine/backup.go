@@ -2,9 +2,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tofunmiadewuyi/dbq/internal/config"
@@ -54,7 +57,7 @@ func (e *Engine) runBackup(ctx context.Context, req Request, started time.Time) 
 
 	dumpPath, err := driver.Dump(e.sourceJob(req), fileReader)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to dump database: %w", err)
+		return "", "", dumpFailure("failed to dump database", err)
 	}
 	defer e.removeFile(dumpPath) //nolint:errcheck
 
@@ -111,7 +114,7 @@ func (e *Engine) runServerSideBackup(ctx context.Context, req Request, driver so
 	remotePath := fmt.Sprintf("/var/tmp/%s/%s", config.AppName, fileName)
 
 	if err := driver.DumpRemote(e.sourceJob(req), r, remotePath); err != nil {
-		return "", fmt.Errorf("server-side dump failed: %w", err)
+		return "", dumpFailure("server-side dump failed", err)
 	}
 	if _, err := r.Exec("which gzip"); err != nil {
 		return "", fmt.Errorf("gzip not found on remote host — install gzip")
@@ -135,4 +138,14 @@ func (e *Engine) runServerSideBackup(ctx context.Context, req Request, driver so
 		return "", fmt.Errorf("server upload failed: %w", err)
 	}
 	return key, nil
+}
+
+// Dump tools report filesystem failures through stderr, so their wrapped exit
+// errors do not always retain an ENOSPC value. Match the known diagnostics too.
+func dumpFailure(operation string, err error) error {
+	diagnostic := strings.ToLower(err.Error())
+	if errors.Is(err, syscall.ENOSPC) || strings.Contains(diagnostic, "no space left on device") || strings.Contains(diagnostic, "got errno 28 on write") {
+		return fmt.Errorf("%s: not enough space to write the backup. Free space on the host receiving the dump (temporary files use /var/tmp/dbq), then retry. Details: %w", operation, err)
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }

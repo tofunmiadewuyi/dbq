@@ -1,24 +1,19 @@
 name: Release
-
 on:
   push:
     tags:
       - "v*"
-
 permissions:
   contents: write
-
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     environment: prod
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-
       - name: Build + package
         env:
           DBQ_RELEASE_BASE: ${{ vars.DBQ_RELEASE_BASE }}
@@ -46,7 +41,6 @@ jobs:
           cp dist/latest.txt dist/site/releases/dbq/latest.txt
           cp dist/install.sh dist/site/install.sh
           tar -czf "dist/dbq_site_${VERSION}.tar.gz" -C dist/site .
-
       - name: Create Release + Upload Assets
         uses: softprops/action-gh-release@v2
         with:
@@ -54,7 +48,6 @@ jobs:
             dist/*.tar.gz
             dist/*.txt
             dist/install.sh
-
       - name: Publish installer site to R2
         if: ${{ vars.DBQ_R2_BUCKET != '' }}
         env:
