@@ -1,11 +1,15 @@
 package source
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tofunmiadewuyi/dbq/internal/config"
@@ -140,8 +144,7 @@ func (pg *Postgres) Test(j *SourceJob, r reader.FileReader) error {
 			return fmt.Errorf("create PostgreSQL credential file: %w", err)
 		}
 		defer cleanup()
-		args := postgresHealthArgs(j)
-		return local.ExecCommand("psql", args, postgresHealthEnv(passfile), io.Discard)
+		return checkPostgresCompatibility(j, passfile, local.ExecCommand)
 	}
 	remote, ok := r.(reader.RemoteCommandRunner)
 	if !ok {
@@ -155,11 +158,11 @@ func (pg *Postgres) Test(j *SourceJob, r reader.FileReader) error {
 	if err != nil {
 		return fmt.Errorf("create remote PostgreSQL credential file: %w", err)
 	}
-	runErr := remote.ExecRemoteCommand("psql", postgresHealthArgs(j), postgresHealthEnv(passfile), io.Discard)
+	runErr := checkPostgresCompatibility(j, passfile, remote.ExecRemoteCommand)
 	cleanupErr := remote.RemoveCredentialFile(passfile)
 	if runErr != nil {
 		if cleanupErr != nil {
-			return fmt.Errorf("psql: %w (also failed to remove remote credential file: %v)", runErr, cleanupErr)
+			return fmt.Errorf("%w (also failed to remove remote credential file: %v)", runErr, cleanupErr)
 		}
 		return runErr
 	}
@@ -169,11 +172,59 @@ func (pg *Postgres) Test(j *SourceJob, r reader.FileReader) error {
 	return nil
 }
 
+// PostgreSQL 10+ uses the first component as the major version; older
+// releases use the first two. Compare the same numeric format the server uses.
+var pgDumpVersionPattern = regexp.MustCompile(`^pg_dump \(PostgreSQL\) ([0-9]+)(?:\.([0-9]+))?`)
+
+func checkPostgresCompatibility(j *SourceJob, passfile string, run func(string, []string, []string, io.Writer) error) error {
+	var client bytes.Buffer
+	if err := run("pg_dump", []string{"--version"}, nil, &client); err != nil {
+		return fmt.Errorf("check pg_dump version: %w", err)
+	}
+	match := pgDumpVersionPattern.FindStringSubmatch(strings.TrimSpace(client.String()))
+	if match == nil {
+		return errors.New("could not determine pg_dump version")
+	}
+	major, err := strconv.Atoi(match[1])
+	if err != nil || major < 1 {
+		return errors.New("invalid pg_dump version")
+	}
+	clientMajor := major * 10000
+	clientLabel := match[1]
+	if major < 10 {
+		minor, err := strconv.Atoi(match[2])
+		if err != nil {
+			return errors.New("invalid pg_dump version")
+		}
+		clientMajor += minor * 100
+		clientLabel += "." + match[2]
+	}
+	var server bytes.Buffer
+	if err := run("psql", postgresHealthArgs(j), postgresHealthEnv(passfile), &server); err != nil {
+		return fmt.Errorf("check PostgreSQL server version: %w", err)
+	}
+	version, err := strconv.Atoi(strings.TrimSpace(server.String()))
+	if err != nil || version < 10000 {
+		return errors.New("could not determine PostgreSQL server version")
+	}
+	serverMajor := version / 10000 * 10000
+	serverLabel := strconv.Itoa(version / 10000)
+	if version < 100000 {
+		serverMajor = version / 100 * 100
+		serverLabel += "." + strconv.Itoa(version/100%100)
+	}
+	if clientMajor < serverMajor {
+		return fmt.Errorf("pg_dump %s cannot back up PostgreSQL %s; install PostgreSQL client %s or newer on the backup host and ensure pg_dump in PATH uses it", clientLabel, serverLabel, serverLabel)
+	}
+	return nil
+}
+
 func postgresHealthArgs(j *SourceJob) []string {
 	return []string{
 		"--no-password", "--host", j.Host, "--port", j.Port,
 		"--username", j.Username, "--dbname", j.Name,
-		"--no-align", "--tuples-only", "--command", "SELECT 1",
+		"--no-psqlrc", "--no-align", "--tuples-only", "--set", "ON_ERROR_STOP=1",
+		"--command", "SHOW server_version_num",
 	}
 }
 

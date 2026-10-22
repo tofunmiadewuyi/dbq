@@ -2,19 +2,24 @@ package source
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/tofunmiadewuyi/dbq/internal/reader"
 )
 
 // mockReader implements reader.FileReader for testing.
 // Commands are matched by prefix against the errors map; unmatched commands succeed.
 type mockReader struct {
-	calls  []string
-	errors map[string]error
+	calls         []string
+	errors        map[string]error
+	clientVersion string
+	serverVersion string
 }
 
 func (m *mockReader) Exec(cmd string) ([]byte, error) {
@@ -82,7 +87,8 @@ func (r *remoteReader) RemoveCredentialFile(path string) error {
 	return r.removeErr
 }
 
-func (r *remoteReader) ExecRemoteCommand(name string, args, env []string, _ io.Writer) error {
+func (r *remoteReader) ExecRemoteCommand(name string, args, env []string, dst io.Writer) error {
+	r.writePostgresOutput(name, dst)
 	r.name = name
 	r.args = append([]string(nil), args...)
 	r.env = append([]string(nil), env...)
@@ -96,7 +102,8 @@ func (r *remoteReader) ExecRemoteCommandToFile(name string, args, env []string, 
 
 func (r *directReader) LookPath(string) error { return nil }
 
-func (r *directReader) ExecCommand(name string, args, env []string, _ io.Writer) error {
+func (r *directReader) ExecCommand(name string, args, env []string, dst io.Writer) error {
+	r.writePostgresOutput(name, dst)
 	r.call.name = name
 	r.call.args = append([]string(nil), args...)
 	r.call.env = append([]string(nil), env...)
@@ -343,5 +350,59 @@ func TestServerSideDumpKeepsPasswordOutOfCommandAndCleansCredentials(t *testing.
 				})
 			}
 		})
+	}
+}
+
+func (m *mockReader) writePostgresOutput(name string, dst io.Writer) {
+	if name == "pg_dump" {
+		version := m.clientVersion
+		if version == "" {
+			version = "pg_dump (PostgreSQL) 17.6"
+		}
+		fmt.Fprintln(dst, version)
+	}
+	if name == "psql" {
+		version := m.serverVersion
+		if version == "" {
+			version = "170006"
+		}
+		fmt.Fprintln(dst, version)
+	}
+}
+
+func TestPostgresHealthChecksDumpCompatibility(t *testing.T) {
+	for _, tc := range []struct{ name, client, server, wantError string }{
+		{"older client", "pg_dump (PostgreSQL) 16.9 (Ubuntu 16.9-0ubuntu0.24.10.1)", "170006", "pg_dump 16 cannot back up PostgreSQL 17"},
+		{"same major", "pg_dump (PostgreSQL) 17.1", "170006", ""},
+		{"newer client", "pg_dump (PostgreSQL) 18.0", "170006", ""},
+		{"older pre-10 client", "pg_dump (PostgreSQL) 9.5.25", "90624", "cannot back up"},
+		{"unknown client", "unexpected", "170006", "version"},
+		{"unknown server", "pg_dump (PostgreSQL) 17.6", "unexpected", "version"},
+	} {
+		for _, remote := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ssh=%t", tc.name, remote), func(t *testing.T) {
+				m := mockReader{clientVersion: tc.client, serverVersion: tc.server}
+				var r reader.FileReader = &directReader{mockReader: m}
+				if remote {
+					r = &remoteReader{mockReader: m}
+				}
+				err := (&Postgres{}).Test(&SourceJob{Host: "localhost", Port: "5432", Name: "app", Username: "backup", Password: "secret"}, r)
+				if tc.wantError == "" {
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("error = %v, want %q", err, tc.wantError)
+				}
+				if rr, ok := r.(*remoteReader); ok && !rr.removed {
+					t.Fatal("credential file was not removed")
+				}
+				if lr, ok := r.(*directReader); ok && lr.call.credentialPath != "" {
+					if _, err := os.Stat(lr.call.credentialPath); !os.IsNotExist(err) {
+						t.Fatalf("credential file was not removed: %v", err)
+					}
+				}
+			})
+		}
 	}
 }
