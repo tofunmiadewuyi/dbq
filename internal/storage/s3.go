@@ -86,12 +86,7 @@ func NewS3Client(cfg *CloudStorage, creds Credentials) (*S3Client, error) {
 func (s *S3Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName string, dbName string, extension string, contentType string, reader io.Reader) (string, error) {
 	key := BackupKey(backupName, dbName, timestamp, extension)
 
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(key),
-		Body:        reader,
-		ContentType: aws.String(contentType),
-	})
+	err := uploadStream(ctx, s.client, s.bucket, key, contentType, reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to upload attachment to S3: %w", err)
 	}

@@ -87,12 +87,7 @@ func (r *R2Client) DeleteBackup(ctx context.Context, key string) error {
 func (r *R2Client) UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, extension, contentType string, reader io.Reader) (string, error) {
 	key := BackupKey(backupName, dbName, timestamp, extension)
 
-	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(r.bucket),
-		Key:         aws.String(key),
-		Body:        reader,
-		ContentType: aws.String(contentType),
-	})
+	err := uploadStream(ctx, r.client, r.bucket, key, contentType, reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to R2: %w", err)
 	}

@@ -76,6 +76,11 @@ type BackupObject struct {
 
 // StorageClient is the shared interface every storage backend must satisfy.
 type StorageClient interface {
+	// UploadBackup accepts files or unknown-length streams. Implementations buffer
+	// one 64 MiB part at a time and abort on read/upload errors. EOF declares the
+	// producer successful: a streaming producer must finish its dump and compressor
+	// before closing normally, and close with an error on failure. The caller owns
+	// r and must unblock pending reads on cancellation. Maximum size: 625 GiB.
 	UploadBackup(ctx context.Context, timestamp time.Time, backupName, dbName, extension, contentType string, r io.Reader) (string, error)
 	TestConnection(ctx context.Context) error
 	// PresignPutURL returns a short-lived presigned HTTP PUT URL for the given key.
