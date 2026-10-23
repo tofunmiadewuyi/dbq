@@ -158,7 +158,7 @@ func (s *SSHFileReader) execStream(cmd string, src io.Reader, dst io.Writer) err
 		}
 		return err
 	}
-	return nil
+	return dumpDiagnosticError(stderr.String())
 }
 
 func (s *SSHFileReader) CreateCredentialFile(prefix, contents string) (string, error) {
@@ -226,7 +226,15 @@ func (s *SSHFileReader) ExecRemoteCommandToFile(name string, args, env []string,
 	if err != nil {
 		return err
 	}
-	return s.ExecStream(command, io.Discard)
+	err = s.ExecStream(command, io.Discard)
+	// The remote shell only sees the process status, so a zero-exit diagnostic
+	// failure requires removing its newly created output here.
+	if errors.Is(err, errDumpDiagnostic) {
+		if cleanupErr := s.ExecRemoteCommand("rm", []string{"-f", "--", outputPath}, nil, io.Discard); cleanupErr != nil {
+			return errors.Join(err, fmt.Errorf("remove failed remote dump: %w", cleanupErr))
+		}
+	}
+	return err
 }
 
 func remoteFileCommand(name string, args, env []string, outputPath string) (string, error) {

@@ -2,12 +2,14 @@ package reader
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/tofunmiadewuyi/dbq/internal/secrets"
 )
@@ -56,7 +58,7 @@ func (l *LocalFileReader) ExecStream(cmd string, dst io.Writer) error {
 		}
 		return err
 	}
-	return nil
+	return dumpDiagnosticError(stderr.String())
 }
 
 func (l *LocalFileReader) LookPath(name string) error {
@@ -80,7 +82,39 @@ func (l *LocalFileReader) ExecCommand(name string, args, env []string, dst io.Wr
 		}
 		return err
 	}
-	return nil
+	return dumpDiagnosticError(stderr.String())
+}
+
+// ExecCommandContext streams stdout and stops the process group on cancellation.
+func (l *LocalFileReader) ExecCommandContext(ctx context.Context, name string, args, env []string, dst io.Writer) error {
+	c := exec.CommandContext(ctx, name, args...)
+	configureStreamProcess(c)
+	c.WaitDelay = 5 * time.Second
+	c.Env = childEnv(env)
+	stderr := &limitedDiagnostic{}
+	c.Stderr = stderr
+	c.Stdout = dst
+	if err := c.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return dumpDiagnosticError(stderr.String())
+}
+
+// Keep diagnostic output bounded even when a dump tool repeatedly warns.
+type limitedDiagnostic struct{ bytes.Buffer }
+
+func (b *limitedDiagnostic) Write(p []byte) (int, error) {
+	n := len(p)
+	if remaining := 64*1024 - b.Len(); remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		_, _ = b.Buffer.Write(p)
+	}
+	return n, nil
 }
 
 // childEnv preserves operational settings while preventing runner credentials

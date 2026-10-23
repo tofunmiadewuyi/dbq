@@ -39,7 +39,7 @@ func (m *MySQL) Dump(j *SourceJob, r reader.FileReader) (string, error) {
 		_ = os.Remove(outPath)
 		return "", fmt.Errorf("create remote MySQL credential file: %w", err)
 	}
-	args := []string{"--defaults-extra-file=" + defaultsFile, "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
+	args := []string{"--defaults-extra-file=" + defaultsFile, "--routines", "--events", "--triggers", "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
 	runErr := remote.ExecRemoteCommand("mysqldump", args, []string{"MYSQL_PWD"}, f)
 	cleanupErr := remote.RemoveCredentialFile(defaultsFile)
 	if runErr != nil {
@@ -76,7 +76,7 @@ func (m *MySQL) dumpLocal(j *SourceJob, r reader.CommandRunner) (string, error) 
 	}
 	defer cleanup()
 
-	args := []string{"--defaults-extra-file=" + defaultsFile, "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
+	args := []string{"--defaults-extra-file=" + defaultsFile, "--routines", "--events", "--triggers", "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
 	if err := r.ExecCommand("mysqldump", args, []string{"MYSQL_PWD"}, out); err != nil {
 		_ = os.Remove(outPath)
 		return "", fmt.Errorf("mysqldump: %w", err)
@@ -99,7 +99,7 @@ func (m *MySQL) DumpRemote(j *SourceJob, r reader.FileReader, remotePath string)
 	if err != nil {
 		return fmt.Errorf("create remote credential file: %w", err)
 	}
-	args := []string{"--defaults-extra-file=" + credentialPath, "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
+	args := []string{"--defaults-extra-file=" + credentialPath, "--routines", "--events", "--triggers", "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
 	runErr := remote.ExecRemoteCommandToFile("mysqldump", args, []string{"PGPASSWORD", "MYSQL_PWD"}, remotePath)
 	cleanupErr := remote.RemoveCredentialFile(credentialPath)
 	if cleanupErr != nil {

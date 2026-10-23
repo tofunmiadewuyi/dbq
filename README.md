@@ -190,6 +190,24 @@ Presigned upload URLs travel through SSH stdin into curl's configuration input,
 without appearing in remote command text or process arguments or creating a URL
 file. Curl's default configuration is disabled for these uploads.
 
+### Streaming cloud backups
+
+When database tools run locally (including `dbq agent` on a Custos host), cloud
+backups stream stdout through gzip directly into S3/R2 multipart uploads. MySQL
+produces `.sql.gz`; PostgreSQL retains its custom format inside `.dump.gz`.
+There is no local dump or archive file; only small temporary credential files
+remain. The uploader buffers one 64 MiB compressed part at a time, with a maximum
+backup size of 625 GiB. Slow uploads apply backpressure to the dump process.
+
+A backup is completed only after the dump exits successfully and gzip finishes.
+Dump errors abort the upload; upload errors cancel the dump. Agent mode handles
+SIGINT/SIGTERM through the same cancellation path. Interrupted backups restart
+from the beginning. Configure a bucket lifecycle rule to abort incomplete
+multipart uploads left by crashes or forced termination. Retention runs only
+after a successful backup.
+
+Directory backups and SSH transfer modes retain their existing file-based behavior.
+
 ### Example — local PostgreSQL database, upload to S3
 
 ```toml
@@ -313,3 +331,53 @@ backups/
     <db-name>/
       <unix-timestamp>
 ```
+
+### Database backup scope and permissions
+
+MySQL dumps explicitly include `--routines --events --triggers`, preserving
+stored procedures, functions, scheduled events, and triggers alongside tables
+and data. These options apply to local, SSH, server-side, and streaming dumps.
+Tablespace output is retained; dbq does not add `--no-tablespaces` or ignore
+errors when object definitions cannot be read.
+
+Before upgrading, the database administrator should check the backup account:
+
+- On the selected database: `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, and
+  `LOCK TABLES` (the current command uses mysqldump's default table locking).
+- On MySQL 8.0.20 and later: global `SHOW_ROUTINE` to read all routine
+  definitions, unless existing privileges already provide that access.
+  Older MySQL versions require version-specific routine metadata access.
+- On MySQL 8.0.21 and later: global `PROCESS` for the retained tablespace query.
+
+For example, an administrator on modern MySQL can adapt these grants to the
+actual database and existing account (do not create a new account implicitly):
+
+```sql
+GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES
+  ON `app_database`.* TO 'backup_user'@'backup_host';
+GRANT SHOW_ROUTINE, PROCESS ON *.* TO 'backup_user'@'backup_host';
+```
+
+Managed database services may restrict these grants. Resolve that with the
+service administrator before relying on a successful backup. The connectivity
+check does not verify all dump privileges. In particular, without SHOW_ROUTINE,
+MySQL can silently omit routine definitions even when mysqldump exits
+successfully. Verify routines and other object inventories in an isolated
+restore after changing grants; success status alone does not prove completeness. MySQL restores also need privileges to create the dumped objects and
+compatible DEFINER accounts/permissions; the target Event Scheduler must be
+configured appropriately if restored events should execute.
+
+PostgreSQL already uses an unfiltered `pg_dump -Fc`, which includes database
+functions, procedures, triggers, schema, and data without extra inclusion flags.
+The account needs connection and read access to all dumped data, including
+sequences and large objects where applicable; row-level security can require
+additional access. No PostgreSQL privilege change is introduced here.
+PostgreSQL roles and tablespace definitions are cluster-wide objects and require
+separate provisioning or a `pg_dumpall --globals-only` backup. External scheduler
+configuration and extension binaries also require separate provisioning.
+
+These are database logical backups, not complete server images. Validate a
+restore on an isolated target, including routines, triggers, and event behavior.
+References: [MySQL mysqldump](https://dev.mysql.com/doc/refman/8.4/en/mysqldump.html),
+[MySQL privileges](https://dev.mysql.com/doc/refman/8.4/en/privileges-provided.html),
+and [PostgreSQL pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html).

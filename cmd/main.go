@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"github.com/tofunmiadewuyi/dbq/internal/agent"
 	"github.com/tofunmiadewuyi/dbq/internal/engine"
@@ -43,7 +45,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Usage: dbq agent")
 			os.Exit(2)
 		}
-		os.Exit(agent.Run(context.Background(), os.Stdin, os.Stdout, os.Stderr, os.Getenv, engine.New()))
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		code := agent.Run(ctx, os.Stdin, os.Stdout, os.Stderr, os.Getenv, engine.New())
+		stop()
+		os.Exit(code)
 
 	case "secrets":
 		if len(os.Args) != 3 || os.Args[2] != "migrate" {

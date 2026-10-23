@@ -2,8 +2,10 @@ package reader
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -53,5 +55,35 @@ func TestLocalCommandsDoNotInheritRunnerCredentials(t *testing.T) {
 	}
 	if os.Getenv("DBQ_DB_PASSWORD") != "synthetic-secret" {
 		t.Fatal("parent credentials were removed")
+	}
+}
+
+func TestDumpDiagnosticsCannotReportFalseSuccess(t *testing.T) {
+	for _, mode := range []string{"direct", "context", "shell-stream"} {
+		for _, diagnostic := range []string{
+			"mysqldump: Error: 'Access denied; PROCESS privilege required' when trying to dump tablespaces",
+			"mysqldump: [Warning] harmless warning",
+			"Warning: A partial dump from a server that has GTIDs will include GTIDs",
+		} {
+			t.Run(mode+"/"+diagnostic, func(t *testing.T) {
+				script := "printf '%s\\n' \"$DBQ_DIAGNOSTIC\" >&2; printf partial; exit 0"
+				t.Setenv("DBQ_DIAGNOSTIC", diagnostic)
+				var out bytes.Buffer
+				r := &LocalFileReader{}
+				var err error
+				switch mode {
+				case "direct":
+					err = r.ExecCommand("sh", []string{"-c", script}, nil, &out)
+				case "context":
+					err = r.ExecCommandContext(context.Background(), "sh", []string{"-c", script}, nil, &out)
+				case "shell-stream":
+					err = r.ExecStream(script, &out)
+				}
+				wantFailure := strings.Contains(diagnostic, "Access denied")
+				if (err != nil) != wantFailure {
+					t.Fatalf("diagnostic ignored or warning rejected: %v", err)
+				}
+			})
+		}
 	}
 }

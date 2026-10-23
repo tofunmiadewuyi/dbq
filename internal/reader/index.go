@@ -2,6 +2,7 @@
 package reader
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -76,4 +77,9 @@ func GetFileReader(ssh *SSHConn) (FileReader, error) {
 
 	// use local
 	return &LocalFileReader{}, nil
+}
+
+// ContextCommandRunner supports cancellation of local streaming commands.
+type ContextCommandRunner interface {
+	ExecCommandContext(context.Context, string, []string, []string, io.Writer) error
 }

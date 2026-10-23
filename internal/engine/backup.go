@@ -55,6 +55,17 @@ func (e *Engine) runBackup(ctx context.Context, req Request, started time.Time) 
 		return key, "", err
 	}
 
+	if !req.SSH.Required && req.StorageType == storage.TypeCloud {
+		if stream, ok := driver.(source.StreamDriver); ok {
+			runner, ok := fileReader.(reader.ContextCommandRunner)
+			if !ok {
+				return "", "", fmt.Errorf("reader does not support cancellable streaming commands")
+			}
+			key, err := e.streamToCloud(ctx, req, started, stream, runner)
+			return key, "", err
+		}
+	}
+
 	dumpPath, err := driver.Dump(e.sourceJob(req), fileReader)
 	if err != nil {
 		return "", "", dumpFailure("failed to dump database", err)
