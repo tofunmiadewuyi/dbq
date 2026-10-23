@@ -20,7 +20,7 @@ func (m *MySQL) DumpStream(ctx context.Context, j *SourceJob, r reader.ContextCo
 		return fmt.Errorf("create MySQL credential file: %w", err)
 	}
 	defer cleanup()
-	args := []string{"--defaults-extra-file=" + path, "--routines", "--events", "--triggers", "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
+	args := []string{"--defaults-extra-file=" + path, "--single-transaction", "--quick", "--skip-lock-tables", "--routines", "--events", "--triggers", "-h", j.Host, "-P", j.Port, "-u", j.Username, j.Name}
 	if err := r.ExecCommandContext(ctx, "mysqldump", args, []string{"MYSQL_PWD"}, dst); err != nil {
 		return fmt.Errorf("mysqldump: %w", err)
 	}

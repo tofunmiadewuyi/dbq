@@ -81,3 +81,22 @@ failure mid-part, or MySQL 5.7/MariaDB. SSH paths remain file-based.
 Test cloud objects, incomplete uploads, disposable databases and containers,
 and temporary helper programs were removed. Existing `custos_local` was not
 changed. Source changes remain uncommitted.
+
+## Follow-up: InnoDB snapshot flags
+
+All four MySQL dump paths now explicitly pass
+`--single-transaction --quick --skip-lock-tables`. The matrix above was run
+before this flag change; it does not certify snapshot consistency for MyISAM.
+The full Go suite passed again after the change, including the streaming and
+server-side command contracts.
+
+A subsequent live MySQL 8.4 test ran the actual updated streaming driver against
+10,000 InnoDB rows and deliberately paused its output after 1 MiB. While the
+dump remained paused, an independent INSERT completed in 46 ms. The finished
+dump restored successfully with the original 10,000 rows; the source contained
+10,001 rows. This verifies concurrent writes and snapshot consistency for that
+case. The temporary server and artifacts were removed.
+
+Nontransactional tables need a separate locking or maintenance policy. Avoid
+schema changes during dumps. GTID-enabled deployments must review the snapshot
+privileges documented in README; this follow-up concurrency test used GTID off.

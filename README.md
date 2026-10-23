@@ -340,20 +340,30 @@ and data. These options apply to local, SSH, server-side, and streaming dumps.
 Tablespace output is retained; dbq does not add `--no-tablespaces` or ignore
 errors when object definitions cannot be read.
 
+MySQL dumps also use `--single-transaction --quick --skip-lock-tables` on every
+execution path. InnoDB data is read from a consistent snapshot without explicit
+read locks that block application writes. Upload backpressure can extend the
+snapshot's lifetime and increase undo/history retention and server load. Avoid
+schema-changing DDL during the dump. MyISAM and other nontransactional tables
+are not covered by snapshot consistency; use a separate maintenance/locking
+policy for those engines rather than treating a mixed-engine dump as atomic.
+
 Before upgrading, the database administrator should check the backup account:
 
 - On the selected database: `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, and
-  `LOCK TABLES` (the current command uses mysqldump's default table locking).
+  any additional privileges required by the server version and GTID settings.
 - On MySQL 8.0.20 and later: global `SHOW_ROUTINE` to read all routine
   definitions, unless existing privileges already provide that access.
   Older MySQL versions require version-specific routine metadata access.
 - On MySQL 8.0.21 and later: global `PROCESS` for the retained tablespace query.
+- With `--single-transaction`, MySQL 8.0.32 and later may also require `RELOAD`
+  or `FLUSH_TABLES` when GTID mode is enabled and `--set-gtid-purged` is AUTO/ON.
 
 For example, an administrator on modern MySQL can adapt these grants to the
 actual database and existing account (do not create a new account implicitly):
 
 ```sql
-GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES
+GRANT SELECT, SHOW VIEW, TRIGGER, EVENT
   ON `app_database`.* TO 'backup_user'@'backup_host';
 GRANT SHOW_ROUTINE, PROCESS ON *.* TO 'backup_user'@'backup_host';
 ```

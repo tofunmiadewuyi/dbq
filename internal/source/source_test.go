@@ -336,7 +336,7 @@ func TestServerSideDumpKeepsPasswordOutOfCommandAndCleansCredentials(t *testing.
 						t.Fatal("cleanup failure lost")
 					}
 					if driver.name == "mysql" {
-						for _, option := range []string{"--routines", "--events", "--triggers"} {
+						for _, option := range []string{"--single-transaction", "--quick", "--skip-lock-tables", "--routines", "--events", "--triggers"} {
 							if !strings.Contains(" "+strings.Join(r.args, " ")+" ", " "+option+" ") {
 								t.Fatalf("MySQL backup omits %s", option)
 							}

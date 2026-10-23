@@ -42,6 +42,15 @@ func TestLocalCloudStreaming(t *testing.T) {
 					program = "pg_dump"
 				}
 				script := "#!/bin/sh\nprintf 'database contents'\n"
+				if db == config.MySQL {
+					script = "#!/bin/sh\n" + `for flag in --single-transaction --quick --skip-lock-tables; do
+                        found=no
+                        for arg in "$@"; do [ "$arg" != "$flag" ] || found=yes; done
+                        [ "$found" = yes ] || { echo "missing snapshot option: $flag" >&2; exit 9; }
+                    done
+                    printf 'database contents'
+                    `
+				}
 				if scenario == "dump failure" {
 					script += "echo 'database disconnected' >&2\nexit 1\n"
 				}
